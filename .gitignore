@@ -1,0 +1,61 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Pp]ublish/
+TestResults/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+*.trx
+
+# Packages and generated bundles
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+artifacts/
+
+# IDEs and editors
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.csproj.user
+
+# Operating-system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Logs, diagnostics, and local scratch data
+*.log
+*.dmp
+*.stackdump
+*.tmp
+*.bak
+*.spt-bak
+*.firstpass.*
+.cache/
+.temp/
+tmp/
+
+# Local DnSpyXDX state when redirected into the repository
+.dnspyxdx/
+.clrvoyant/
+.managedlens/
+session.json
+window.json
+
+# Export staging directories
+.dnspyxdx-export-*/
+.clrvoyant-export-*/
+.managedlens-export-*/
+.baby-dnspy-*/

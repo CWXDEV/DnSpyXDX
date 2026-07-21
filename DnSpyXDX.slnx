@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DecompilerApp.Application/DecompilerApp.Application.csproj" />
+    <Project Path="src/DecompilerApp.Decompilation/DecompilerApp.Decompilation.csproj" />
+    <Project Path="src/DecompilerApp.Export/DecompilerApp.Export.csproj" />
+    <Project Path="src/DecompilerApp.UI/DecompilerApp.UI.csproj" />
+    <Project Path="src/DecompilerApp.Host/DecompilerApp.Host.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DecompilerApp.Tests/DecompilerApp.Tests.csproj" />
+  </Folder>
+</Solution>

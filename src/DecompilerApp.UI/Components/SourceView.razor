@@ -1,0 +1,3 @@
+<div class="source-header"><span>C#</span><span>@Document.Title</span></div>
+<pre class="source"><code>@((MarkupString)CodeHighlighter.Highlight(Document.Text))</code></pre>
+@code { [Parameter, EditorRequired] public DecompilerDocument Document { get; set; } = null!; }

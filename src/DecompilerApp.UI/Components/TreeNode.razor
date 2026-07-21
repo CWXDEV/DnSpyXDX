@@ -1,0 +1,22 @@
+@inject IDecompilerBackend Backend
+@inject IJSRuntime JS
+<div class="tree-item depth-@Depth">
+  <button class="tree-row @(IsSelected ? "selected" : null)" title="@Node.Detail" @onclick="SelectAsync" @ref="row">
+    <span class="chevron">@(Node.HasChildren ? (expanded ? "▾" : "▸") : "")</span><span class="node-icon @Node.Kind.ToString().ToLowerInvariant()">@Icon</span>@if (Node.Visibility is not null) { <span class="meta-visibility">@Node.Visibility</span> }@if (Node.TypeDisplay is not null) { <span class="meta-type meta-type-@Node.TypeClassification">@Node.TypeDisplay</span> }<span class="meta-name meta-@Node.NameClassification">@Node.Name</span>@if (Node.Detail is not null) { <small>@Node.Detail</small> }
+  </button>
+  @if (expanded) { @foreach (var child in children) { <TreeNode Node="child" Depth="@(Depth + 1)" OnOpen="OnOpen" ExpandedPath="ExpandedPath" SelectedSymbol="SelectedSymbol" /> } }
+</div>
+@code {
+  [Parameter, EditorRequired] public TreeNodeDescriptor Node { get; set; } = null!;
+  [Parameter] public int Depth { get; set; }
+  [Parameter] public EventCallback<SymbolId> OnOpen { get; set; }
+  [Parameter] public IReadOnlySet<NodeId>? ExpandedPath { get; set; }
+  [Parameter] public SymbolId? SelectedSymbol { get; set; }
+  private bool expanded; private IReadOnlyList<TreeNodeDescriptor> children = [];
+  private ElementReference row;
+  private bool IsSelected => Node.Symbol is { } symbol && symbol == SelectedSymbol;
+  private string Icon => Node.Kind switch { TreeNodeKind.Assembly => "◈", TreeNodeKind.Namespace => "N", TreeNodeKind.Type => "C", TreeNodeKind.Method or TreeNodeKind.Constructor => "M", TreeNodeKind.Property => "P", TreeNodeKind.Field => "F", TreeNodeKind.Event => "E", TreeNodeKind.Reference => "↗", TreeNodeKind.Resource => "◆", _ => "▦" };
+  private async Task SelectAsync() { if (Node.Symbol is { } symbol) await OnOpen.InvokeAsync(symbol); if (!Node.HasChildren) return; expanded = !expanded; if (expanded && children.Count == 0) children = await Backend.GetChildrenAsync(Node.Id); }
+  protected override async Task OnParametersSetAsync() { if (Node.HasChildren && ExpandedPath?.Contains(Node.Id) == true) { expanded = true; if (children.Count == 0) children = await Backend.GetChildrenAsync(Node.Id); } }
+  protected override async Task OnAfterRenderAsync(bool firstRender) { if (IsSelected) await JS.InvokeVoidAsync("babyDnSpy.scrollTreeNodeIntoView", row); }
+}
