@@ -67,8 +67,11 @@
 .tree-row>.chevron,.tree-row>.node-icon{flex:0 0 auto}
 .tree-row>.meta-visibility,.tree-row>.meta-type,.tree-row>.meta-name{display:inline;flex:0 0 auto;overflow:visible;text-overflow:clip}
 
-/* Rainbow brace pairs, advancing once per nesting level */
-.source code{display:block;min-width:max-content;min-height:100%}
+/* Rainbow brace pairs and dnSpy-style dashed guides between multi-line pairs. */
+.source{position:relative;isolation:isolate}
+.source code{position:relative;z-index:1;display:block;min-width:max-content;min-height:100%}
+.block-structure-layer{position:absolute;inset:0;z-index:0;overflow:visible;pointer-events:none}
+.block-structure-guide{fill:none;stroke-width:1;stroke-dasharray:3 3;stroke-linecap:butt;stroke-opacity:.48;vector-effect:non-scaling-stroke;shape-rendering:crispEdges}
 .source-find{position:absolute;top:12px;right:12px;z-index:30;height:34px;display:flex;align-items:center;gap:4px;padding:3px 5px;background:#171d28;border:1px solid #354157;border-radius:5px;box-shadow:0 5px 18px #0008}.source-find input{width:220px;height:26px;border:1px solid #354157;background:#0e131b;color:#e2e8f2;border-radius:4px;padding:0 8px;outline:none}.source-find input:focus{border-color:#7868f6}.source-find-count{min-width:72px;color:#8996aa;text-align:center;font-size:11px}.source-find button{width:26px;height:26px;padding:0;border:0;background:transparent;color:#c8d2e2;border-radius:3px}.source-find button:hover:not(:disabled){background:#2a3447}.source-find button:disabled{opacity:.35;cursor:default}::highlight(source-find-results){background:#6d5f2855;color:inherit}::highlight(source-find-active){background:#d89614;color:#111}
 .code-brace{font-weight:700}
 .brace-0{color:#ffd700}.brace-1{color:#da70d6}.brace-2{color:#4ec9b0}.brace-3{color:#569cd6}.brace-4{color:#ff8c69}.brace-5{color:#b5cea8}.brace-6{color:#c586c0}

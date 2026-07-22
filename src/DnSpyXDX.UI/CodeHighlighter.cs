@@ -15,15 +15,33 @@ public static partial class CodeHighlighter
     {
         var output = new StringBuilder(source.Length + source.Length / 4);
         var braceDepth = 0;
+        var nextBracePair = 0;
+        var bracePairs = new Stack<(int Pair, int Depth)>();
         foreach (Match match in TokenRegex().Matches(source))
         {
             var token = match.Value;
             string? css;
+            int? bracePair = null;
             if (match.Groups["comment"].Success) css = "code-comment";
             else if (match.Groups["literal"].Success) css = IsString(token) ? "code-string" : "code-number";
             else if (match.Groups["word"].Success) css = WordClass(source, match);
-            else if (token == "{") { css = $"code-brace brace-{braceDepth % 7}"; braceDepth++; }
-            else if (token == "}") { braceDepth = Math.Max(0, braceDepth - 1); css = $"code-brace brace-{braceDepth % 7}"; }
+            else if (token == "{")
+            {
+                bracePair = nextBracePair++;
+                bracePairs.Push((bracePair.Value, braceDepth));
+                css = $"code-brace brace-{braceDepth % 7}";
+                braceDepth++;
+            }
+            else if (token == "}")
+            {
+                if (bracePairs.TryPop(out var opening))
+                {
+                    bracePair = opening.Pair;
+                    braceDepth = opening.Depth;
+                }
+                else braceDepth = Math.Max(0, braceDepth - 1);
+                css = $"code-brace brace-{braceDepth % 7}";
+            }
             else css = null;
             var encoded = WebUtility.HtmlEncode(token);
             if (css is null) { output.Append(encoded); continue; }
@@ -37,7 +55,12 @@ public static partial class CodeHighlighter
                 if (target is { } resolved) output.Append(" data-token=\"").Append(resolved.MetadataToken).Append('"');
                 output.Append('>').Append(encoded).Append("</span>");
             }
-            else output.Append("<span class=\"").Append(css).Append("\">").Append(encoded).Append("</span>");
+            else
+            {
+                output.Append("<span class=\"").Append(css).Append('"');
+                if (bracePair is { } pair) output.Append(" data-brace-pair=\"").Append(pair).Append('"');
+                output.Append('>').Append(encoded).Append("</span>");
+            }
         }
         return output.ToString();
     }

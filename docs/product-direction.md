@@ -66,7 +66,7 @@ Those are separate products' worth of complexity. The architecture below leaves 
 Add capabilities in this order:
 
 1. IL disassembly view.
-2. Analyzer: callers, callees, type uses, derived types, and interface implementations.
+2. Analyzer: callers, callees, type uses, derived types, and interface implementations. Add an IDE-style `Used By: N` indicator above symbol declarations; selecting it opens a searchable, keyboard-accessible popover of referencing symbols, and selecting a result navigates to the containing method or type. Initially index static metadata/IL references across open assemblies, with exact source-location navigation added after semantic reference spans are available.
 3. Resource viewer and extraction.
 4. Assembly diff and API diff.
 5. PDB/source-link awareness.

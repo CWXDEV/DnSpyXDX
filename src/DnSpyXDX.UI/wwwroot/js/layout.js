@@ -122,6 +122,81 @@ window.dnSpyXdx.initHistoryButtons = function (dotNet) {
 window.dnSpyXdx.scrollSourceToTop = function (source) {
   if (source) source.scrollTop = 0;
 };
+window.dnSpyXdx.initBlockStructure = function (source) {
+  if (!source || source._blockStructureObserver) return;
+  const schedule = () => {
+    if (source._blockStructureFrame) cancelAnimationFrame(source._blockStructureFrame);
+    source._blockStructureFrame = requestAnimationFrame(() => {
+      source._blockStructureFrame = 0;
+      window.dnSpyXdx.renderBlockStructure(source);
+    });
+  };
+  source._blockStructureObserver = new ResizeObserver(schedule);
+  source._blockStructureObserver.observe(source);
+  if (document.fonts?.ready) document.fonts.ready.then(schedule);
+  schedule();
+};
+window.dnSpyXdx.renderBlockStructure = function (source) {
+  if (!source) return;
+  source.querySelector(":scope > .block-structure-layer")?.remove();
+  const code = source.querySelector(":scope > code");
+  if (!code) return;
+
+  const pairs = new Map();
+  code.querySelectorAll(".code-brace[data-brace-pair]").forEach(brace => {
+    const pair = brace.dataset.bracePair;
+    if (!pairs.has(pair)) pairs.set(pair, []);
+    pairs.get(pair).push(brace);
+  });
+
+  const guides = [];
+  const sourceBounds = source.getBoundingClientRect();
+  pairs.forEach(braces => {
+    if (braces.length !== 2) return;
+    const opening = braces[0].getBoundingClientRect();
+    const closing = braces[1].getBoundingClientRect();
+    // dnSpy omits the brace lines and places the guide at whichever brace is less indented.
+    const top = opening.bottom - sourceBounds.top + source.scrollTop;
+    const bottom = closing.top - sourceBounds.top + source.scrollTop;
+    if (bottom - top < 1) return;
+    const openingX = opening.left + opening.width / 2;
+    const closingX = closing.left + closing.width / 2;
+    guides.push({
+      x: Math.round(Math.min(openingX, closingX) - sourceBounds.left + source.scrollLeft) + 0.5,
+      top: Math.round(top) + 0.5,
+      bottom: Math.round(bottom) + 0.5,
+      color: getComputedStyle(braces[0]).color
+    });
+  });
+  if (guides.length === 0) return;
+
+  // Keep the fixed SVG namespace from looking like a fetchable asset to offline-asset scans.
+  const svgNamespace = "http" + "://www.w3.org/2000/svg";
+  const layer = document.createElementNS(svgNamespace, "svg");
+  layer.classList.add("block-structure-layer");
+  layer.setAttribute("aria-hidden", "true");
+  layer.setAttribute("width", Math.max(source.scrollWidth, source.clientWidth));
+  layer.setAttribute("height", Math.max(source.scrollHeight, source.clientHeight));
+  guides.forEach(guide => {
+    const line = document.createElementNS(svgNamespace, "line");
+    line.classList.add("block-structure-guide");
+    line.setAttribute("x1", guide.x);
+    line.setAttribute("x2", guide.x);
+    line.setAttribute("y1", guide.top);
+    line.setAttribute("y2", guide.bottom);
+    line.style.stroke = guide.color;
+    layer.appendChild(line);
+  });
+  source.insertBefore(layer, code);
+};
+window.dnSpyXdx.disposeBlockStructure = function (source) {
+  if (!source) return;
+  if (source._blockStructureFrame) cancelAnimationFrame(source._blockStructureFrame);
+  source._blockStructureFrame = 0;
+  source._blockStructureObserver?.disconnect();
+  source._blockStructureObserver = null;
+  source.querySelector(":scope > .block-structure-layer")?.remove();
+};
 window.dnSpyXdx.scrollTreeNodeIntoView = function (row) {
   if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 };

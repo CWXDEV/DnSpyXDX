@@ -33,6 +33,7 @@
       selfReference = DotNetObjectReference.Create(this);
       await JS.InvokeVoidAsync("dnSpyXdx.initSourceLinks", source, selfReference);
       await JS.InvokeVoidAsync("dnSpyXdx.initSourceFind", source, selfReference);
+      await JS.InvokeVoidAsync("dnSpyXdx.initBlockStructure", source);
     }
     // The pre element is reused across documents, so its scroll offset has to be reset by hand
     // when a different symbol is shown.
@@ -40,6 +41,7 @@
     {
       renderedSymbol = Document.Symbol;
       await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToTop", source);
+      await JS.InvokeVoidAsync("dnSpyXdx.renderBlockStructure", source);
       if (findOpen) await FindChangedAsync();
     }
     if (focusFind) { focusFind = false; await findInput.FocusAsync(); }
@@ -88,6 +90,8 @@
 
   public async ValueTask DisposeAsync()
   {
+    try { await JS.InvokeVoidAsync("dnSpyXdx.disposeBlockStructure", source); }
+    catch (JSDisconnectedException) { }
     try { await JS.InvokeVoidAsync("dnSpyXdx.disposeSourceFind", source); }
     catch (JSDisconnectedException) { }
     selfReference?.Dispose();

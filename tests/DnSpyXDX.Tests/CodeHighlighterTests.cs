@@ -89,6 +89,17 @@ public sealed class CodeHighlighterTests
 
         Assert.Equal(2, html.Split("code-brace brace-0", StringSplitOptions.None).Length - 1);
         Assert.Equal(2, html.Split("code-brace brace-1", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, html.Split("data-brace-pair=\"0\"", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, html.Split("data-brace-pair=\"1\"", StringSplitOptions.None).Length - 1);
         Assert.Contains("code-string\">&quot;{ignored}&quot;", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Does_not_pair_braces_inside_comments_or_strings()
+    {
+        var html = CodeHighlighter.Highlight("void Run() { // } ignored\nvar text = \"{ignored}\";\n}");
+
+        Assert.Equal(2, html.Split("data-brace-pair=\"0\"", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("data-brace-pair=\"1\"", html, StringComparison.Ordinal);
     }
 }
