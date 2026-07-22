@@ -24,6 +24,8 @@ DnSpyXDX treats assemblies as untrusted input. It reads PE files and CLI metadat
 
 Malformed files can still consume significant CPU or memory while being parsed or decompiled. Do not treat the current in-process architecture as a security boundary.
 
+The application UI is fully offline-capable: its HTML, CSS, JavaScript, images, and fonts are bundled with the published application, without restricting application network access.
+
 ## Requirements
 
 - .NET 10 SDK for development
