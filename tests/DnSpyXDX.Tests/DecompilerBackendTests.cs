@@ -103,6 +103,24 @@ public sealed class DecompilerBackendTests
     }
 
     [Fact]
+    public async Task Displays_generic_types_with_their_parameter_names()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var namespaces = (await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "Namespaces");
+        var ownNamespace = (await backend.GetChildrenAsync(namespaces.Id)).Single(n => n.Name == "DnSpyXDX.Tests");
+
+        var genericType = (await backend.GetChildrenAsync(ownNamespace.Id)).Single(n => n.Name == "GenericSample<TItem>");
+        var constructor = (await backend.GetChildrenAsync(genericType.Id)).Single(n => n.Kind == TreeNodeKind.Constructor);
+        var searchResult = Assert.Single(await backend.SearchAsync("GenericSample"), result => result.Kind == "Type");
+        var document = await backend.DecompileAsync(genericType.Symbol!.Value);
+
+        Assert.Equal("GenericSample<TItem>", constructor.Name);
+        Assert.Equal("GenericSample<TItem>", searchResult.Name);
+        Assert.Equal("GenericSample<TItem>", document.Title);
+    }
+
+    [Fact]
     public async Task Opens_a_referenced_assembly_from_its_tree_node()
     {
         await using var backend = new DecompilerBackend();
@@ -168,4 +186,6 @@ public sealed class SampleMembers
     public void Later() { }
     public sealed class SampleNested { }
 }
+
+public sealed class GenericSample<TItem> { }
 #pragma warning restore CS0067, CS0649

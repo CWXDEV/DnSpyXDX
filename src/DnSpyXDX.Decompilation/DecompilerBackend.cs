@@ -184,7 +184,7 @@ internal sealed class AssemblySession : IDisposable
     {
         var t = metadata.GetTypeDefinition(h);
         var isEnum = IsEnum(t);
-        return new(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(h):X8}"), metadata.GetString(t.Name), TreeNodeKind.Type, true, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), Visibility: TypeVisibility(t.Attributes), TypeDisplay: isEnum ? "enum" : TypeKeyword(t.Attributes), NameClassification: isEnum ? "enum" : "type", TypeClassification: "keyword");
+        return new(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(h):X8}"), TypeDisplayName(t), TreeNodeKind.Type, true, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), Visibility: TypeVisibility(t.Attributes), TypeDisplay: isEnum ? "enum" : TypeKeyword(t.Attributes), NameClassification: isEnum ? "enum" : "type", TypeClassification: "keyword");
     }
 
     private IReadOnlyList<TreeNodeDescriptor> TypeChildren(TypeDefinitionHandle handle, CancellationToken ct)
@@ -208,7 +208,7 @@ internal sealed class AssemblySession : IDisposable
         var name = metadata.GetString(x.Name);
         var isConstructor = name is ".ctor" or ".cctor";
         return MemberNode(h,
-            isConstructor ? metadata.GetString(declaringType.Name) : name,
+            isConstructor ? TypeDisplayName(declaringType) : name,
             isConstructor ? TreeNodeKind.Constructor : TreeNodeKind.Method,
             MemberVisibility(x.Attributes),
             isConstructor ? null : x.DecodeSignature(typeNames, null).ReturnType);
@@ -397,7 +397,7 @@ internal sealed class AssemblySession : IDisposable
         var type = metadata.GetTypeDefinition((TypeDefinitionHandle)selected);
         var declarations = new List<(EntityHandle Handle, string Name, bool Callable)>
         {
-            (selected, metadata.GetString(type.Name), false)
+            (selected, TypeIdentifier(type), false)
         };
         declarations.AddRange(type.GetFields().Select(h => ((EntityHandle)h, metadata.GetString(metadata.GetFieldDefinition(h).Name), false)));
         declarations.AddRange(type.GetProperties().Select(h => ((EntityHandle)h, metadata.GetString(metadata.GetPropertyDefinition(h).Name), false)));
@@ -405,7 +405,7 @@ internal sealed class AssemblySession : IDisposable
         declarations.AddRange(type.GetMethods().Where(h => !metadata.GetMethodDefinition(h).Attributes.HasFlag(MethodAttributes.SpecialName) || metadata.GetString(metadata.GetMethodDefinition(h).Name) is ".ctor" or ".cctor").Select(h =>
         {
             var name = metadata.GetString(metadata.GetMethodDefinition(h).Name);
-            return ((EntityHandle)h, name is ".ctor" or ".cctor" ? metadata.GetString(type.Name) : name, true);
+            return ((EntityHandle)h, name is ".ctor" or ".cctor" ? TypeIdentifier(type) : name, true);
         }));
 
         var lines = source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
@@ -508,8 +508,8 @@ internal sealed class AssemblySession : IDisposable
         foreach (var h in metadata.TypeDefinitions)
         {
             ct.ThrowIfCancellationRequested();
-            var t = metadata.GetTypeDefinition(h); var typeName = metadata.GetString(t.Name); var ns = metadata.GetString(t.Namespace);
-            if (typeName.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(h, typeName, "Type", ns);
+            var t = metadata.GetTypeDefinition(h); var metadataName = metadata.GetString(t.Name); var typeName = TypeDisplayName(t); var ns = metadata.GetString(t.Namespace);
+            if (typeName.Contains(query, StringComparison.OrdinalIgnoreCase) || metadataName.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(h, typeName, "Type", ns);
             foreach (var m in t.GetMethods()) { var name = metadata.GetString(metadata.GetMethodDefinition(m).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(m, name, "Method", ns); }
             foreach (var f in t.GetFields()) { var name = metadata.GetString(metadata.GetFieldDefinition(f).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(f, name, "Field", ns); }
             foreach (var p in t.GetProperties()) { var name = metadata.GetString(metadata.GetPropertyDefinition(p).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(p, name, "Property", ns); }
@@ -539,13 +539,40 @@ internal sealed class AssemblySession : IDisposable
     private SearchResult Result(EntityHandle h, string name, string kind, string ns) => new(new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), name, kind, Descriptor.Name, ns);
     private string GetEntityName(EntityHandle h) => h.Kind switch
     {
-        HandleKind.TypeDefinition => metadata.GetString(metadata.GetTypeDefinition((TypeDefinitionHandle)h).Name),
+        HandleKind.TypeDefinition => TypeDisplayName(metadata.GetTypeDefinition((TypeDefinitionHandle)h)),
         HandleKind.MethodDefinition => metadata.GetString(metadata.GetMethodDefinition((MethodDefinitionHandle)h).Name),
         HandleKind.FieldDefinition => metadata.GetString(metadata.GetFieldDefinition((FieldDefinitionHandle)h).Name),
         HandleKind.PropertyDefinition => metadata.GetString(metadata.GetPropertyDefinition((PropertyDefinitionHandle)h).Name),
         HandleKind.EventDefinition => metadata.GetString(metadata.GetEventDefinition((EventDefinitionHandle)h).Name),
         _ => $"0x{MetadataTokens.GetToken(h):X8}"
     };
+
+    private string TypeDisplayName(TypeDefinition type)
+    {
+        var metadataName = metadata.GetString(type.Name);
+        var separator = metadataName.LastIndexOf('`');
+        if (separator <= 0 || !int.TryParse(metadataName.AsSpan(separator + 1), out var arity) || arity <= 0) return metadataName;
+
+        var parameters = type.GetGenericParameters()
+            .Select(handle => metadata.GetGenericParameter(handle))
+            .OrderBy(parameter => parameter.Index)
+            .TakeLast(arity)
+            .Select((parameter, index) =>
+            {
+                var name = metadata.GetString(parameter.Name);
+                return string.IsNullOrEmpty(name) ? arity == 1 ? "T" : $"T{index + 1}" : name;
+            })
+            .ToList();
+        while (parameters.Count < arity) parameters.Add(arity == 1 ? "T" : $"T{parameters.Count + 1}");
+        return $"{metadataName[..separator]}<{string.Join(", ", parameters)}>";
+    }
+
+    private string TypeIdentifier(TypeDefinition type)
+    {
+        var name = metadata.GetString(type.Name);
+        var separator = name.LastIndexOf('`');
+        return separator > 0 && int.TryParse(name.AsSpan(separator + 1), out _) ? name[..separator] : name;
+    }
     private static int ParseToken(NodeId node) => Convert.ToInt32(node.Value[(node.Value.IndexOf(':') + 1)..], 16);
     public void Dispose() { gate.Dispose(); module.Dispose(); }
 }
