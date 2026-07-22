@@ -1,0 +1,15 @@
+# Primary references checked
+
+- [dnSpyEx/dnSpy repository and feature list](https://github.com/dnSpyEx/dnSpy)
+- [dnSpy decompiler project layout](https://github.com/dnSpyEx/dnSpy/tree/master/dnSpy/dnSpy.Decompiler)
+- [Photino.NET repository](https://github.com/tryphotino/photino.NET)
+- [Photino architecture and platform web controls](https://www.tryphotino.io/)
+- [Photino NuGet profile](https://www.nuget.org/profiles/Photino)
+- [Photino.Native Linux build dependencies](https://github.com/tryphotino/photino.Native/blob/master/makefile)
+- [ILSpy repository and supported features](https://github.com/icsharpcode/ILSpy)
+- [ICSharpCode.Decompiler stable NuGet package](https://www.nuget.org/packages/ICSharpCode.Decompiler/)
+- [`CSharpDecompiler` implementation/API](https://github.com/icsharpcode/ILSpy/blob/master/ICSharpCode.Decompiler/CSharp/CSharpDecompiler.cs)
+- [`WholeProjectDecompiler` implementation/API](https://github.com/icsharpcode/ILSpy/blob/master/ICSharpCode.Decompiler/CSharp/ProjectDecompiler/WholeProjectDecompiler.cs)
+- [`IProjectFileWriter` extension point](https://github.com/icsharpcode/ILSpy/blob/master/ICSharpCode.Decompiler/CSharp/ProjectDecompiler/IProjectFileWriter.cs)
+- [.NET 10 `.slnx` default behavior](https://learn.microsoft.com/en-us/dotnet/core/compatibility/sdk/10.0/dotnet-new-sln-slnx-default)
+- [`dotnet sln` command and `.slnx` support](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-sln)

@@ -76,7 +76,20 @@ The internal project names remain deliberately generic so the UI host can be rep
 
 DnSpyXDX currently focuses on read-only inspection and best-effort source export. Debugging, assembly editing, recompilation, IL patching, and metadata rewriting are outside the current scope.
 
-See [photino-dnspy-clone-guide.md](photino-dnspy-clone-guide.md) for the original architecture guide and [docs/architecture-decisions.md](docs/architecture-decisions.md) for the decisions applied to this implementation.
+## Documentation
+
+The original implementation guide is now organized into focused documents:
+
+- [Documentation index](docs/README.md)
+- [Product direction and scope](docs/product-direction.md)
+- [Application architecture](docs/application-architecture.md)
+- [Assembly workspace and navigation](docs/assembly-workspace-and-navigation.md)
+- [Project export](docs/project-export.md)
+- [Dependencies and platform support](docs/dependencies-and-platform.md)
+- [Reliability and testing](docs/reliability-and-testing.md)
+- [Implementation roadmap](docs/implementation-roadmap.md)
+- [Architecture decisions](docs/architecture-decisions.md)
+- [Primary references](docs/references.md)
 
 ## License
 
