@@ -47,7 +47,7 @@
         </header>
         <div class="explorer-tree">
           @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
-          @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" CollapseVersion="treeCollapseVersion" /> }
+          @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" Tooltip="@($"Loaded from: {Path.GetDirectoryName(assembly.Path)}")" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" OnContextMenu="e => OpenAssemblyContextMenu(e, assembly)" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" CollapseVersion="treeCollapseVersion" /> }
         </div>
       </aside>
       <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
@@ -81,6 +81,14 @@
     </section>
   </main>
   <footer><span class="status-dot @(Workspace.IsBusy ? "busy" : null)"></span>@Workspace.Status</footer>
+  @if (contextAssembly is not null)
+  {
+    <div class="context-menu-dismiss" @onclick="CloseAssemblyContextMenu" @oncontextmenu:preventDefault></div>
+    <div class="assembly-context-menu" style="--context-x:@(contextMenuX)px;--context-y:@(contextMenuY)px" @onclick:stopPropagation @oncontextmenu:preventDefault>
+      <div class="context-menu-identity" title="@contextAssembly.Path"><strong>@contextAssembly.Name</strong><small>@Path.GetDirectoryName(contextAssembly.Path)</small></div>
+      <button disabled="@Workspace.IsBusy" @onclick="UnloadContextAssemblyAsync"><span>Unload assembly</span></button>
+    </div>
+  }
 </div>
 
 @code {
@@ -108,6 +116,9 @@
   private const int MaximumZoom = 200;
   private const int ZoomStep = 10;
   private int zoomPercent = 100;
+  private AssemblyDescriptor? contextAssembly;
+  private int contextMenuX;
+  private int contextMenuY;
   private DotNetObjectReference<MainWindow>? selfReference;
   protected override async Task OnInitializedAsync()
   {
@@ -149,6 +160,33 @@
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
   private void ToggleSearchPanel() { if (searchOpen) CloseSearch(); else OpenSearchPanel(); }
   private async Task UnloadAllAsync() { menuOpen = false; CancelAllDecompilations(); Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
+  private void OpenAssemblyContextMenu(MouseEventArgs e, AssemblyDescriptor assembly)
+  {
+    menuOpen = false;
+    contextAssembly = assembly;
+    contextMenuX = (int)Math.Round(e.ClientX);
+    contextMenuY = (int)Math.Round(e.ClientY);
+  }
+  private void CloseAssemblyContextMenu() => contextAssembly = null;
+  private async Task UnloadContextAssemblyAsync()
+  {
+    if (contextAssembly is not { } assembly || Workspace.IsBusy) return;
+    contextAssembly = null;
+    Workspace.SetBusy(true, $"Unloading {assembly.Name}…");
+    foreach (var tab in Workspace.Tabs.Where(tab => tab.Document.Symbol.ModuleMvid == assembly.ModuleMvid).ToArray())
+    {
+      if (decompilations.TryGetValue(tab.Id, out var cancellation)) await cancellation.CancelAsync();
+    }
+    await Backend.CloseAsync(assembly.SessionId);
+    Workspace.CloseAssembly(assembly.ModuleMvid);
+    results = results.Where(result => result.Symbol.ModuleMvid != assembly.ModuleMvid).ToArray();
+    if (selectedSymbol?.ModuleMvid == assembly.ModuleMvid)
+    {
+      selectedSymbol = Workspace.ActiveTab?.Document.Symbol;
+      revealedPath = selectedSymbol is { } symbol ? (await Backend.GetPathAsync(symbol)).ToHashSet() : new HashSet<NodeId>();
+    }
+    Workspace.SetBusy(false, $"Unloaded {assembly.Name}");
+  }
   private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false, string? displayName = null, bool isType = false)
   {
     selectedSymbol = symbol;

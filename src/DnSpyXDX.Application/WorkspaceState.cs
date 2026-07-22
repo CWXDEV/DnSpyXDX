@@ -89,6 +89,20 @@ public sealed class WorkspaceState
         Changed?.Invoke();
     }
 
+    /// <summary>Closes documents owned by an unloaded module and removes that module from the
+    /// navigation history of documents that remain open.</summary>
+    public void CloseAssembly(Guid moduleMvid)
+    {
+        var activeIndex = tabs.FindIndex(tab => tab.Id == ActiveTabId);
+        for (var index = tabs.Count - 1; index >= 0; index--)
+        {
+            if (tabs[index].RemoveAssembly(moduleMvid)) tabs.RemoveAt(index);
+        }
+        if (ActiveTabId is not null && tabs.All(tab => tab.Id != ActiveTabId))
+            ActiveTabId = tabs.ElementAtOrDefault(Math.Min(Math.Max(activeIndex, 0), tabs.Count - 1))?.Id ?? tabs.LastOrDefault()?.Id;
+        Changed?.Invoke();
+    }
+
     public void Clear()
     {
         tabs.Clear();
@@ -137,6 +151,15 @@ public sealed class DocumentTab(string id, DecompilerDocument document, string a
 
     internal bool GoBack() => Step(back, forward);
     internal bool GoForward() => Step(forward, back);
+
+    /// <returns><see langword="true"/> when the current document belongs to the module and the
+    /// whole tab should be closed.</returns>
+    internal bool RemoveAssembly(Guid moduleMvid)
+    {
+        back.RemoveAll(entry => entry.Document.Symbol.ModuleMvid == moduleMvid);
+        forward.RemoveAll(entry => entry.Document.Symbol.ModuleMvid == moduleMvid);
+        return Document.Symbol.ModuleMvid == moduleMvid;
+    }
 
     private bool Step(List<(DecompilerDocument Document, string AssemblyName)> from, List<(DecompilerDocument Document, string AssemblyName)> to)
     {

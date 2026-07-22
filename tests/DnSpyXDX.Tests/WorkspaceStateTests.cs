@@ -7,6 +7,8 @@ public sealed class WorkspaceStateTests
 {
     private static DecompilerDocument Document(int token) =>
         new(new SymbolId(Guid.Empty, token), $"Type{token}", "csharp", "// body", [], []);
+    private static DecompilerDocument Document(Guid moduleMvid, int token) =>
+        new(new SymbolId(moduleMvid, token), $"Type{token}", "csharp", "// body", [], []);
 
     [Fact]
     public void Plain_navigation_reuses_the_active_tab()
@@ -121,5 +123,24 @@ public sealed class WorkspaceStateTests
         var tab = Assert.Single(workspace.Tabs);
         Assert.Equal("Type2", tab.Title);
         Assert.Equal(tab.Id, workspace.ActiveTabId);
+    }
+
+    [Fact]
+    public void Closing_an_assembly_removes_its_tabs_and_history_only()
+    {
+        var workspace = new WorkspaceState();
+        var firstAssembly = Guid.NewGuid();
+        var secondAssembly = Guid.NewGuid();
+        workspace.Open(Document(firstAssembly, 1), "SameName");
+        workspace.Open(Document(secondAssembly, 2), "SameName");
+        workspace.Open(Document(firstAssembly, 3), "SameName", newTab: true);
+
+        workspace.CloseAssembly(firstAssembly);
+
+        var remaining = Assert.Single(workspace.Tabs);
+        Assert.Equal(secondAssembly, remaining.Document.Symbol.ModuleMvid);
+        Assert.Equal(remaining.Id, workspace.ActiveTabId);
+        Assert.False(remaining.CanGoBack);
+        Assert.False(remaining.CanGoForward);
     }
 }

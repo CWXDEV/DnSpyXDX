@@ -1,7 +1,7 @@
 @inject IDecompilerBackend Backend
 @inject IJSRuntime JS
 <div class="tree-item depth-@Depth">
-  <button class="tree-row @(IsSelected ? "selected" : null)" title="@Node.Detail" @onclick="SelectAsync" @ref="row">
+  <button class="tree-row @(IsSelected ? "selected" : null)" title="@(Tooltip ?? Node.Detail)" @onclick="SelectAsync" @oncontextmenu="OpenContextMenuAsync" @oncontextmenu:preventDefault="@(Node.Kind == TreeNodeKind.Assembly)" @oncontextmenu:stopPropagation="@(Node.Kind == TreeNodeKind.Assembly)" @ref="row">
     <span class="chevron" @onclick="ToggleAsync" @onclick:stopPropagation="true">@(Node.HasChildren ? (expanded ? "▾" : "▸") : "")</span><span class="node-icon @Node.Kind.ToString().ToLowerInvariant()">@Icon</span>@if (Node.Visibility is not null) { <span class="meta-visibility">@Node.Visibility</span> }@if (Node.TypeDisplay is not null) { <span class="meta-type meta-type-@Node.TypeClassification">@Node.TypeDisplay</span> }<span class="meta-name meta-@Node.NameClassification">@Node.Name</span>@if (Node.Detail is not null) { <small>@Node.Detail</small> }
   </button>
   @if (expanded) { @foreach (var child in children) { <TreeNode @key="child.Id" Node="child" Depth="@(Depth + 1)" OnOpen="OnOpen" OnOpenReference="OnOpenReference" ExpandedPath="ExpandedPath" SelectedSymbol="SelectedSymbol" CollapseVersion="CollapseVersion" /> } }
@@ -11,6 +11,8 @@
   [Parameter] public int Depth { get; set; }
   [Parameter] public EventCallback<NavigationRequest> OnOpen { get; set; }
   [Parameter] public EventCallback<NodeId> OnOpenReference { get; set; }
+  [Parameter] public EventCallback<MouseEventArgs> OnContextMenu { get; set; }
+  [Parameter] public string? Tooltip { get; set; }
   [Parameter] public IReadOnlySet<NodeId>? ExpandedPath { get; set; }
   [Parameter] public SymbolId? SelectedSymbol { get; set; }
   [Parameter] public int CollapseVersion { get; set; }
@@ -20,6 +22,7 @@
   private bool IsSelected => Node.Symbol is { } symbol && symbol == SelectedSymbol;
   private string Icon => Node.Kind switch { TreeNodeKind.Assembly => "◈", TreeNodeKind.Namespace => "N", TreeNodeKind.Type => "C", TreeNodeKind.Method or TreeNodeKind.Constructor => "M", TreeNodeKind.Property => "P", TreeNodeKind.Field => "F", TreeNodeKind.Event => "E", TreeNodeKind.Reference => "↗", TreeNodeKind.Resource => "◆", _ => "▦" };
   private async Task SelectAsync(MouseEventArgs e) { if (Node.Symbol is { } symbol) await OnOpen.InvokeAsync(new NavigationRequest(symbol, e.CtrlKey, Node.Kind, Node.Name)); else if (Node.Kind == TreeNodeKind.Reference) await OnOpenReference.InvokeAsync(Node.Id); else await ToggleAsync(); }
+  private Task OpenContextMenuAsync(MouseEventArgs e) => Node.Kind == TreeNodeKind.Assembly ? OnContextMenu.InvokeAsync(e) : Task.CompletedTask;
   private async Task ToggleAsync() { if (!Node.HasChildren) return; expanded = !expanded; manuallyCollapsed = !expanded; if (expanded && children.Count == 0) children = await Backend.GetChildrenAsync(Node.Id); }
   protected override async Task OnParametersSetAsync()
   {
