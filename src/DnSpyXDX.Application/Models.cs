@@ -56,4 +56,10 @@ public sealed record ExportRequest(IReadOnlyList<Guid> SessionIds, string Destin
 public sealed record ExportProgress(int Completed, int Total, string Message);
 public sealed record ExportReport(bool Success, string Destination, IReadOnlyList<string> Projects, IReadOnlyList<string> Warnings, string? BuildOutput = null);
 
-public sealed record UiSessionState(double ExplorerWidth = 300, double SearchPanelHeight = 230, bool SearchOpen = false, string SearchKind = "All", string SearchScope = "All");
+public sealed record UiSessionState(
+    double ExplorerWidth = 300,
+    double SearchPanelHeight = 230,
+    bool SearchOpen = false,
+    string SearchKind = "All",
+    string SearchScope = "All",
+    int ZoomPercent = 100);

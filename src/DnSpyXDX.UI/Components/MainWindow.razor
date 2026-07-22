@@ -5,6 +5,7 @@
 @inject WorkspaceState Workspace
 @inject IJSRuntime JS
 @inject IWorkspaceSessionService Session
+@inject IApplicationZoomService Zoom
 
 <div class="app-shell">
   <header class="toolbar">
@@ -27,6 +28,11 @@
     <button class="toolbar-icon search-toolbar-button @(searchOpen ? "active" : null)" title="@(searchOpen ? "Close search" : "Open search")" aria-label="@(searchOpen ? "Close search" : "Open search")" aria-pressed="@searchOpen" disabled="@(Backend.Assemblies.Count == 0)" @onclick="ToggleSearchPanel">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.5 15.5 5 5"></path></svg>
     </button>
+    <div class="application-zoom" aria-label="Application zoom">
+      <button title="Zoom out (Ctrl+-)" aria-label="Zoom out" disabled="@(zoomPercent <= MinimumZoom)" @onclick="() => ChangeApplicationZoom(-1)">−</button>
+      <button class="zoom-percent" title="Reset zoom to 100% (Ctrl+0)" aria-label="Reset zoom to 100%" @onclick="ResetApplicationZoom">@zoomPercent%</button>
+      <button title="Zoom in (Ctrl++)" aria-label="Zoom in" disabled="@(zoomPercent >= MaximumZoom)" @onclick="() => ChangeApplicationZoom(1)">+</button>
+    </div>
   </header>
   <main>
     <div class="explorer-pane" @ref="explorer" style="width:@($"{explorerWidth}px")">
@@ -98,6 +104,10 @@
   private double explorerWidth = 300;
   private double searchPanelHeight = 230;
   private int treeCollapseVersion;
+  private const int MinimumZoom = 50;
+  private const int MaximumZoom = 200;
+  private const int ZoomStep = 10;
+  private int zoomPercent = 100;
   private DotNetObjectReference<MainWindow>? selfReference;
   protected override async Task OnInitializedAsync()
   {
@@ -113,6 +123,8 @@
       searchOpen = ui.SearchOpen;
       searchKind = ui.SearchKind;
       searchScope = ui.SearchScope;
+      zoomPercent = ui.ZoomPercent <= 0 ? 100 : Math.Clamp(ui.ZoomPercent, MinimumZoom, MaximumZoom);
+      Zoom.SetZoom(zoomPercent);
       if (Workspace.ActiveTab is { } active)
       {
         selectedSymbol = active.Document.Symbol;
@@ -125,10 +137,10 @@
       Workspace.SetBusy(false, Backend.Assemblies.Count > 0 ? "Session restored" : "Ready");
     }
   }
-  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
+  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initApplicationZoom", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
   private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
   private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
-  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
+  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
   private async Task OpenAsync() { var path = await Dialogs.OpenAssemblyAsync(); if (path is null) return; Workspace.SetBusy(true, "Opening assembly…"); try { await Backend.OpenAsync(path); Workspace.SetBusy(false, $"Opened {Path.GetFileName(path)}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private void ToggleMenu() => menuOpen = !menuOpen;
   private void CloseMenu() => menuOpen = false;
@@ -197,6 +209,23 @@
   private void CollapseAllNodes() => treeCollapseVersion++;
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
   [JSInvokable] public void SearchPanelResized(double height) { searchPanelHeight = height; ScheduleSave(); }
+  [JSInvokable] public void ChangeApplicationZoom(int direction)
+  {
+    var next = Math.Clamp(zoomPercent + Math.Sign(direction) * ZoomStep, MinimumZoom, MaximumZoom);
+    if (next == zoomPercent) return;
+    zoomPercent = next;
+    Zoom.SetZoom(zoomPercent);
+    ScheduleSave();
+    StateHasChanged();
+  }
+  [JSInvokable] public void ResetApplicationZoom()
+  {
+    if (zoomPercent == 100) return;
+    zoomPercent = 100;
+    Zoom.SetZoom(zoomPercent);
+    ScheduleSave();
+    StateHasChanged();
+  }
   private async Task SearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchAsync(); }
   private async Task ExportAsync()
   {

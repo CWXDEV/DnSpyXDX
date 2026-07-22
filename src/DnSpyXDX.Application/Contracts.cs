@@ -30,3 +30,10 @@ public interface IWorkspaceSessionService
     Task RestoreAsync(CancellationToken cancellationToken = default);
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>Controls the native host webview scale for the whole application.</summary>
+public interface IApplicationZoomService
+{
+    int ZoomPercent { get; }
+    void SetZoom(int percent);
+}
