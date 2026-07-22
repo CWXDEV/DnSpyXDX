@@ -8,7 +8,7 @@ public sealed class SlnxWriterTests
     [Fact]
     public async Task Writes_projects_in_deterministic_order()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"baby-dnspy-tests-{Guid.NewGuid():N}");
+        var directory = Path.Combine(Path.GetTempPath(), $"dnspyxdx-tests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {

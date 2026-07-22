@@ -411,10 +411,13 @@ internal sealed class AssemblySession : IDisposable
         var used = new HashSet<int>();
         foreach (var declaration in declarations)
         {
-            for (var i = 0; i < lines.Count; i++)
+            var candidates = Enumerable.Range(0, lines.Count)
+                .Where(i => !used.Contains(i) && IsDeclarationLine(lines[i], declaration.Name, declaration.Callable))
+                .ToArray();
+            if (candidates.Length == 0) continue;
+            var declarationIndent = candidates.Min(i => LeadingWhitespace(lines[i]));
+            foreach (var i in candidates.Where(i => LeadingWhitespace(lines[i]) == declarationIndent))
             {
-                if (used.Contains(i) || !ContainsIdentifier(lines[i], declaration.Name) || declaration.Callable && !lines[i].Contains('(')) continue;
-                if (lines[i].TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
                 used.Add(i);
                 var indent = lines[i][..(lines[i].Length - lines[i].TrimStart().Length)];
                 insertions.Add((i, indent + TokenComment(declaration.Handle)));
@@ -425,9 +428,43 @@ internal sealed class AssemblySession : IDisposable
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static bool ContainsIdentifier(string line, string name)
+    private static bool IsDeclarationLine(string line, string name, bool callable)
     {
-        var index = line.IndexOf(name, StringComparison.Ordinal);
+        if (line.TrimStart().StartsWith("//", StringComparison.Ordinal)) return false;
+        var searchFrom = 0;
+        while (TryFindIdentifier(line, name, searchFrom, out var index))
+        {
+            var position = index + name.Length;
+            while (position < line.Length && char.IsWhiteSpace(line[position])) position++;
+            if (callable && position < line.Length && line[position] == '<')
+            {
+                var depth = 0;
+                do
+                {
+                    if (line[position] == '<') depth++;
+                    else if (line[position] == '>') depth--;
+                    position++;
+                }
+                while (position < line.Length && depth > 0);
+                while (position < line.Length && char.IsWhiteSpace(line[position])) position++;
+            }
+            var followedByParameters = position < line.Length && line[position] == '(';
+            if (callable == followedByParameters) return true;
+            searchFrom = index + name.Length;
+        }
+        return false;
+    }
+
+    private static int LeadingWhitespace(string line)
+    {
+        var length = 0;
+        while (length < line.Length && char.IsWhiteSpace(line[length])) length++;
+        return length;
+    }
+
+    private static bool TryFindIdentifier(string line, string name, int startIndex, out int index)
+    {
+        index = line.IndexOf(name, startIndex, StringComparison.Ordinal);
         while (index >= 0)
         {
             var before = index == 0 || !char.IsLetterOrDigit(line[index - 1]) && line[index - 1] != '_';
@@ -439,10 +476,29 @@ internal sealed class AssemblySession : IDisposable
         return false;
     }
 
-    private static string TokenComment(EntityHandle handle)
+    private string TokenComment(EntityHandle handle)
     {
         var token = MetadataTokens.GetToken(handle);
-        return $"// Token: 0x{token:X8} RID: {token & 0x00FFFFFF}";
+        var comment = $"// Token: 0x{token:X8} RID: {token & 0x00FFFFFF}";
+        if (handle.Kind != HandleKind.MethodDefinition) return comment;
+        var rva = metadata.GetMethodDefinition((MethodDefinitionHandle)handle).RelativeVirtualAddress;
+        if (rva == 0) return comment;
+        return TryGetFileOffset(rva, out var offset)
+            ? $"{comment} RVA: 0x{rva:X8} File Offset: 0x{offset:X8}"
+            : $"{comment} RVA: 0x{rva:X8}";
+    }
+
+    private bool TryGetFileOffset(int rva, out int offset)
+    {
+        foreach (var section in module.Reader.PEHeaders.SectionHeaders)
+        {
+            var size = Math.Max(section.VirtualSize, section.SizeOfRawData);
+            if (rva < section.VirtualAddress || rva >= section.VirtualAddress + size) continue;
+            offset = rva - section.VirtualAddress + section.PointerToRawData;
+            return true;
+        }
+        offset = 0;
+        return false;
     }
 
     public IEnumerable<SearchResult> Search(string query, CancellationToken ct)

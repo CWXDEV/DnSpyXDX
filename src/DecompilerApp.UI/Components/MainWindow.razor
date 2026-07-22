@@ -15,7 +15,7 @@
         <div class="menu-popup">
           <div class="menu-identity"><img src="_content/DecompilerApp.UI/images/dnspyxdx-logo.webp" alt=""><span>DnSpyXDX</span></div>
           <button @onclick="OpenFromMenuAsync" disabled="@Workspace.IsBusy"><span>Open assembly</span></button>
-          <button @onclick="ExportFromMenuAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Export all</span></button>
+          <button @onclick="ExportFromMenuAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Extract solution</span></button>
           <button @onclick="UnloadAllAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Unload all assemblies</span></button>
         </div>
       }
@@ -108,7 +108,7 @@
       Workspace.SetBusy(false, Backend.Assemblies.Count > 0 ? "Session restored" : "Ready");
     }
   }
-  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("babyDnSpy.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("babyDnSpy.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("babyDnSpy.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
+  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
   private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
   private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
   private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
@@ -140,6 +140,33 @@
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
   [JSInvokable] public void SearchPanelResized(double height) { searchPanelHeight = height; ScheduleSave(); }
   private async Task SearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchAsync(); }
-  private async Task ExportAsync() { var folder = await Dialogs.SelectExportFolderAsync(); if (folder is null) return; Workspace.SetBusy(true, "Exporting…"); try { var report = await Exporter.ExportAsync(new ExportRequest(Backend.Assemblies.Select(a => a.SessionId).ToArray(), folder)); Workspace.SetBusy(false, report.Success ? $"Exported to {folder}" : "Export completed with warnings"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
+  private async Task ExportAsync()
+  {
+    var folder = await Dialogs.SelectExportFolderAsync();
+    if (folder is null) return;
+    Workspace.SetBusy(true, "Preparing solution extraction…");
+    var progress = new Progress<ExportProgress>(update =>
+    {
+      if (update.Total <= 0) Workspace.SetBusy(true, update.Message);
+      else
+      {
+        var completed = Math.Clamp(update.Completed, 0, update.Total);
+        var percentage = (int)Math.Round(completed * 100d / update.Total);
+        Workspace.SetBusy(true, $"{percentage}% · {completed}/{update.Total} files — {update.Message}");
+      }
+    });
+    try
+    {
+      // WholeProjectDecompiler is synchronous and CPU-heavy. Running the export pipeline on a
+      // worker thread lets the native folder dialog close and keeps status updates repainting.
+      var request = new ExportRequest(Backend.Assemblies.Select(a => a.SessionId).ToArray(), folder);
+      var report = await Task.Run(() => Exporter.ExportAsync(request, progress));
+      var message = report.Success
+        ? report.Warnings.Count == 0 ? $"Solution extracted to {folder}" : $"Solution extracted with {report.Warnings.Count} warning(s) to {folder}"
+        : $"Solution extraction completed with warnings; see {Path.Combine(folder, "export-report.json")}";
+      Workspace.SetBusy(false, message);
+    }
+    catch (Exception ex) { Workspace.SetBusy(false, $"Solution extraction failed: {ex.Message}"); }
+  }
   public void Dispose() { Workspace.Changed -= Refresh; saveDelay?.Cancel(); saveDelay?.Dispose(); selfReference?.Dispose(); }
 }

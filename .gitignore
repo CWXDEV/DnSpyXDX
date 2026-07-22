@@ -49,16 +49,13 @@ tmp/
 
 # Local DnSpyXDX state when redirected into the repository
 .dnspyxdx/
-.clrvoyant/
 .managedlens/
 session.json
 window.json
 
 # Export staging directories
 .dnspyxdx-export-*/
-.clrvoyant-export-*/
 .managedlens-export-*/
-.baby-dnspy-*/
 
 # Local assemblies
 Assembly-CSharp.dll

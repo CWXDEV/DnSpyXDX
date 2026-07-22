@@ -119,6 +119,29 @@ public sealed class DecompilerBackendTests
         Assert.Equal(2, backend.Assemblies.Count);
     }
 
+    [Fact]
+    public async Task Token_comments_are_attached_to_declarations_and_include_method_locations()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var namespaces = (await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "Namespaces");
+        var ownNamespace = (await backend.GetChildrenAsync(namespaces.Id)).Single(n => n.Name == "DecompilerApp.Tests");
+        var sampleType = (await backend.GetChildrenAsync(ownNamespace.Id)).Single(n => n.Name == nameof(SampleMembers));
+        var members = await backend.GetChildrenAsync(sampleType.Id);
+        var document = await backend.DecompileAsync(sampleType.Symbol!.Value);
+        var lines = document.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+
+        foreach (var name in new[] { nameof(SampleMembers.CallsLater), nameof(SampleMembers.Later) })
+        {
+            var method = members.Single(member => member.Name == name);
+            var declaration = Array.FindIndex(lines, line => line.Contains($"void {name}(", StringComparison.Ordinal));
+            Assert.True(declaration > 0, $"Could not find the declaration for {name}.");
+            var token = method.Symbol!.Value.MetadataToken;
+            Assert.StartsWith($"// Token: 0x{token:X8} RID: {token & 0x00FFFFFF} RVA: 0x", lines[declaration - 1].Trim(), StringComparison.Ordinal);
+            Assert.Contains(" File Offset: 0x", lines[declaration - 1], StringComparison.Ordinal);
+        }
+    }
+
     private static int Group(TreeNodeKind kind) => kind switch
     {
         TreeNodeKind.Constructor or TreeNodeKind.Method => 0,
@@ -141,6 +164,8 @@ public sealed class SampleMembers
     public int SampleProperty { get; set; }
     public event Action? SampleEvent;
     public void SampleMethod() { }
+    public void CallsLater() => Later();
+    public void Later() { }
     public sealed class SampleNested { }
 }
 #pragma warning restore CS0067, CS0649

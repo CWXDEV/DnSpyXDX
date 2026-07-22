@@ -1,5 +1,5 @@
-window.babyDnSpy = window.babyDnSpy || {};
-window.babyDnSpy.initExplorerResize = function (explorer, dotNet) {
+window.dnSpyXdx = window.dnSpyXdx || {};
+window.dnSpyXdx.initExplorerResize = function (explorer, dotNet) {
   if (!explorer || explorer.dataset.resizeReady) return;
   explorer.dataset.resizeReady = "true";
   const handle = explorer.querySelector(".explorer-resizer");
@@ -9,12 +9,23 @@ window.babyDnSpy.initExplorerResize = function (explorer, dotNet) {
     document.body.classList.add("resizing-explorer");
     const startX = event.clientX;
     const startWidth = explorer.getBoundingClientRect().width;
-    const move = moveEvent => {
+    let latestX = startX;
+    let animationFrame = 0;
+    const applyWidth = () => {
+      animationFrame = 0;
       const maximum = window.innerWidth * 0.65;
-      const width = Math.max(190, Math.min(maximum, startWidth + moveEvent.clientX - startX));
+      const width = Math.max(190, Math.min(maximum, startWidth + latestX - startX));
       explorer.style.width = width + "px";
     };
+    const move = moveEvent => {
+      latestX = moveEvent.clientX;
+      if (!animationFrame) animationFrame = requestAnimationFrame(applyWidth);
+    };
     const stop = () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        applyWidth();
+      }
       document.body.classList.remove("resizing-explorer");
       if (dotNet) dotNet.invokeMethodAsync("ExplorerResized", explorer.getBoundingClientRect().width);
       handle.removeEventListener("pointermove", move);
@@ -26,7 +37,7 @@ window.babyDnSpy.initExplorerResize = function (explorer, dotNet) {
     handle.addEventListener("pointercancel", stop);
   });
 };
-window.babyDnSpy.initSearchResize = function (panel, dotNet) {
+window.dnSpyXdx.initSearchResize = function (panel, dotNet) {
   if (!panel || panel.dataset.resizeReady) return;
   panel.dataset.resizeReady = "true";
   const handle = panel.querySelector(".search-resizer");
@@ -52,7 +63,7 @@ window.babyDnSpy.initSearchResize = function (panel, dotNet) {
     handle.addEventListener("pointercancel", stop);
   });
 };
-window.babyDnSpy.initSourceLinks = function (source, dotNet) {
+window.dnSpyXdx.initSourceLinks = function (source, dotNet) {
   if (!source || source.dataset.linksReady) return;
   source.dataset.linksReady = "true";
   let highlighted = [];
@@ -88,9 +99,9 @@ window.babyDnSpy.initSourceLinks = function (source, dotNet) {
     dotNet.invokeMethodAsync("NavigateToToken", Number(link.dataset.token), event.ctrlKey);
   });
 };
-window.babyDnSpy.initHistoryButtons = function (dotNet) {
-  if (window.babyDnSpy.historyReady) return;
-  window.babyDnSpy.historyReady = true;
+window.dnSpyXdx.initHistoryButtons = function (dotNet) {
+  if (window.dnSpyXdx.historyReady) return;
+  window.dnSpyXdx.historyReady = true;
   // Mouse 4 / mouse 5. Chromium fires these as buttons 3 and 4; preventing the default on
   // mousedown stops the webview treating them as browser back/forward.
   window.addEventListener("mousedown", event => {
@@ -108,9 +119,9 @@ window.babyDnSpy.initHistoryButtons = function (dotNet) {
     dotNet.invokeMethodAsync("NavigateHistory", event.key === "ArrowRight");
   });
 };
-window.babyDnSpy.scrollSourceToTop = function (source) {
+window.dnSpyXdx.scrollSourceToTop = function (source) {
   if (source) source.scrollTop = 0;
 };
-window.babyDnSpy.scrollTreeNodeIntoView = function (row) {
+window.dnSpyXdx.scrollTreeNodeIntoView = function (row) {
   if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 };

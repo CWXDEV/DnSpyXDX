@@ -9,19 +9,14 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
     private readonly SemaphoreSlim gate = new(1, 1);
     public UiSessionState UiState { get; set; } = new();
     private string SessionPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DnSpyXDX", "session.json");
-    private IEnumerable<string> LegacySessionPaths => [
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CLRvoyant", "session.json"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BabyDnSpy", "session.json")
-    ];
 
     public async Task RestoreAsync(CancellationToken cancellationToken = default)
     {
-        var restorePath = File.Exists(SessionPath) ? SessionPath : LegacySessionPaths.FirstOrDefault(File.Exists);
-        if (restorePath is null) return;
+        if (!File.Exists(SessionPath)) return;
         SessionSnapshot? snapshot;
         try
         {
-            await using var stream = File.OpenRead(restorePath);
+            await using var stream = File.OpenRead(SessionPath);
             snapshot = await JsonSerializer.DeserializeAsync<SessionSnapshot>(stream, JsonOptions, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return; }

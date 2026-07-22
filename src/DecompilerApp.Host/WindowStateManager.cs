@@ -7,10 +7,6 @@ namespace DecompilerApp.Host;
 internal static class WindowStateManager
 {
     private static readonly string StatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DnSpyXDX", "window.json");
-    private static readonly string[] LegacyStatePaths = [
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CLRvoyant", "window.json"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BabyDnSpy", "window.json")
-    ];
     private static readonly object Sync = new();
     private static Timer? timer;
 
@@ -35,8 +31,7 @@ internal static class WindowStateManager
     {
         try
         {
-            var restorePath = File.Exists(StatePath) ? StatePath : LegacyStatePaths.FirstOrDefault(File.Exists);
-            return restorePath is not null ? JsonSerializer.Deserialize<WindowState>(File.ReadAllText(restorePath)) : null;
+            return File.Exists(StatePath) ? JsonSerializer.Deserialize<WindowState>(File.ReadAllText(StatePath)) : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }

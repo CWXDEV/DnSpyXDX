@@ -16,14 +16,14 @@
     if (firstRender)
     {
       selfReference = DotNetObjectReference.Create(this);
-      await JS.InvokeVoidAsync("babyDnSpy.initSourceLinks", source, selfReference);
+      await JS.InvokeVoidAsync("dnSpyXdx.initSourceLinks", source, selfReference);
     }
     // The pre element is reused across documents, so its scroll offset has to be reset by hand
     // when a different symbol is shown.
     if (renderedSymbol != Document.Symbol)
     {
       renderedSymbol = Document.Symbol;
-      await JS.InvokeVoidAsync("babyDnSpy.scrollSourceToTop", source);
+      await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToTop", source);
     }
   }
 

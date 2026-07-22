@@ -1,5 +1,6 @@
 using DecompilerApp.Application;
 using DecompilerApp.Export;
+using System.Collections.Concurrent;
 using Xunit;
 
 namespace DecompilerApp.Tests;
@@ -9,7 +10,7 @@ public sealed class ProjectExportServiceTests
     [Fact]
     public async Task Exports_sdk_project_solution_and_report()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"baby-dnspy-export-{Guid.NewGuid():N}");
+        var root = Path.Combine(Path.GetTempPath(), $"dnspyxdx-export-{Guid.NewGuid():N}");
         var destination = Path.Combine(root, "output");
         Directory.CreateDirectory(root);
         try
@@ -18,15 +19,24 @@ public sealed class ProjectExportServiceTests
             var descriptor = new AssemblyDescriptor(id, Guid.NewGuid(), "DecompilerApp.Tests", typeof(ProjectExportServiceTests).Assembly.Location, ".NETCoreApp,Version=v10.0", "Amd64", new NodeId(id, "root"));
             await using var backend = new ExportBackendStub(descriptor);
             var exporter = new ProjectExportService(backend);
-            var report = await exporter.ExportAsync(new ExportRequest([id], destination));
+            var progress = new RecordingProgress();
+            var report = await exporter.ExportAsync(new ExportRequest([id], destination), progress);
 
             Assert.True(report.Success);
             Assert.True(File.Exists(Path.Combine(destination, "DnSpyXDXExport.slnx")));
             Assert.True(File.Exists(Path.Combine(destination, "export-report.json")));
             Assert.NotEmpty(Directory.EnumerateFiles(destination, "*.csproj", SearchOption.AllDirectories));
             Assert.NotEmpty(Directory.EnumerateFiles(destination, "*.cs", SearchOption.AllDirectories));
+            Assert.Contains(progress.Updates, update => update.Total > 0 && update.Completed > 0 && update.Completed <= update.Total);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private sealed class RecordingProgress : IProgress<ExportProgress>
+    {
+        private readonly ConcurrentQueue<ExportProgress> updates = new();
+        public IReadOnlyCollection<ExportProgress> Updates => updates.ToArray();
+        public void Report(ExportProgress value) => updates.Enqueue(value);
     }
 
     private sealed class ExportBackendStub(AssemblyDescriptor descriptor) : IDecompilerBackend

@@ -17,7 +17,7 @@ public sealed class ProjectExportService(IDecompilerBackend backend) : IProjectE
         var destination = Path.GetFullPath(request.Destination);
         if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any()) throw new IOException("The export destination must be empty.");
         Directory.CreateDirectory(destination);
-        var staging = Path.Combine(destination, $".baby-dnspy-{Guid.NewGuid():N}");
+        var staging = Path.Combine(destination, $".dnspyxdx-{Guid.NewGuid():N}");
         Directory.CreateDirectory(staging);
         var projects = new List<string>(); var warnings = new List<string>();
         try
@@ -26,7 +26,7 @@ public sealed class ProjectExportService(IDecompilerBackend backend) : IProjectE
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var assembly = assemblies[i];
-                progress?.Report(new ExportProgress(i, assemblies.Length, $"Exporting {assembly.Name}"));
+                progress?.Report(new ExportProgress(0, 0, $"Preparing {assembly.Name}"));
                 var safeName = Sanitize(assembly.Name);
                 var projectDirectory = Path.Combine(staging, "src", safeName);
                 Directory.CreateDirectory(projectDirectory);
@@ -36,6 +36,16 @@ public sealed class ProjectExportService(IDecompilerBackend backend) : IProjectE
                     var resolver = new UniversalAssemblyResolver(assembly.Path, false, module.DetectTargetFrameworkId());
                     resolver.AddSearchDirectory(Path.GetDirectoryName(assembly.Path)!);
                     var exporter = new WholeProjectDecompiler(resolver);
+                    if (progress is not null)
+                    {
+                        exporter.ProgressIndicator = new CallbackProgress<DecompilationProgress>(update =>
+                        {
+                            var total = Math.Max(0, update.TotalUnits);
+                            var completed = Math.Clamp(update.UnitsCompleted, 0, total);
+                            var file = string.IsNullOrWhiteSpace(update.Status) ? "Decompiling source" : update.Status;
+                            progress.Report(new ExportProgress(completed, total, $"{assembly.Name}: {file}"));
+                        });
+                    }
                     exporter.DecompileProject(module, projectDirectory, cancellationToken);
                     var csproj = Directory.EnumerateFiles(projectDirectory, "*.csproj").FirstOrDefault();
                     if (csproj is null) warnings.Add($"{assembly.Name}: no project file was generated.");
@@ -43,6 +53,7 @@ public sealed class ProjectExportService(IDecompilerBackend backend) : IProjectE
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { warnings.Add($"{assembly.Name}: {ex.Message}"); }
             }
+            progress?.Report(new ExportProgress(0, 0, "Writing solution and extraction report"));
             await SlnxWriter.WriteAsync(Path.Combine(staging, "DnSpyXDXExport.slnx"), projects, cancellationToken);
             string? buildOutput = null;
             if (request.ValidateBuild && projects.Count > 0) buildOutput = await ValidateAsync(staging, cancellationToken);
@@ -73,5 +84,10 @@ public sealed class ProjectExportService(IDecompilerBackend backend) : IProjectE
         var output = process.StandardOutput.ReadToEndAsync(ct); var error = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
         return (await output) + (await error);
+    }
+
+    private sealed class CallbackProgress<T>(Action<T> callback) : IProgress<T>
+    {
+        public void Report(T value) => callback(value);
     }
 }
