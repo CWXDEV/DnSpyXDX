@@ -28,7 +28,7 @@
       <aside class="explorer">
         <div class="panel-title">ASSEMBLIES</div>
         @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
-        @foreach (var assembly in Backend.Assemblies) { <TreeNode Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" /> }
+        @foreach (var assembly in Backend.Assemblies) { <TreeNode Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" /> }
       </aside>
       <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
     </div>
@@ -116,6 +116,7 @@
   private async Task UnloadAllAsync() { menuOpen = false; Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
   private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false) { selectedSymbol = symbol; Workspace.SetBusy(true, "Decompiling…"); try { var doc = await Backend.DecompileAsync(symbol); var name = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly"; Workspace.Open(doc, name, newTab); Workspace.SetBusy(false, $"Decompiled {doc.Title}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0);
+  private async Task OpenReferenceAsync(NodeId reference) { Workspace.SetBusy(true, "Loading reference…"); try { var assembly = await Backend.OpenReferenceAsync(reference); revealedPath = new HashSet<NodeId> { assembly.RootNode }; selectedSymbol = null; Workspace.SetBusy(false, $"Opened {assembly.Name}"); StateHasChanged(); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab || Workspace.Tabs.Count == 0); StateHasChanged(); }
   private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab); StateHasChanged(); }
   private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) Workspace.Close(id); }

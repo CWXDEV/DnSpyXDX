@@ -102,6 +102,23 @@ public sealed class DecompilerBackendTests
         Assert.Equal(["add_SampleEvent", "remove_SampleEvent"], eventAccessors.Select(a => a.Name));
     }
 
+    [Fact]
+    public async Task Opens_a_referenced_assembly_from_its_tree_node()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var references = (await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "References");
+        var application = (await backend.GetChildrenAsync(references.Id)).Single(n => n.Name == "DecompilerApp.Application");
+
+        var opened = await backend.OpenReferenceAsync(application.Id);
+
+        Assert.Equal("DecompilerApp.Application", opened.Name);
+        Assert.Contains(backend.Assemblies, candidate => candidate.SessionId == opened.SessionId);
+        Assert.Equal(2, backend.Assemblies.Count);
+        Assert.Equal(opened, await backend.OpenReferenceAsync(application.Id));
+        Assert.Equal(2, backend.Assemblies.Count);
+    }
+
     private static int Group(TreeNodeKind kind) => kind switch
     {
         TreeNodeKind.Constructor or TreeNodeKind.Method => 0,

@@ -94,3 +94,7 @@
 .explorer-pane{position:relative;flex:0 0 auto;min-width:190px;max-width:65vw;min-height:0}
 .explorer-pane>.explorer{width:100%;height:100%;min-width:0;max-width:none}
 .explorer-pane>.explorer-resizer{position:absolute;top:0;right:-2px;bottom:0;left:auto;margin:0;transform:none}
+
+/* Horizontal overflow is intentionally clipped throughout the desktop UI;
+   vertical scrolling remains enabled by each region's existing overflow rule. */
+.explorer,.source,.tabs,.search-results{overflow-x:hidden}

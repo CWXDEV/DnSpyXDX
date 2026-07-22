@@ -29,6 +29,17 @@ public sealed class DecompilerBackend : IDecompilerBackend
         }, cancellationToken);
     }
 
+    public async Task<AssemblyDescriptor> OpenReferenceAsync(NodeId reference, CancellationToken cancellationToken = default)
+    {
+        if (!sessions.TryGetValue(reference.SessionId, out var source)) throw new KeyNotFoundException("The referencing assembly is no longer open.");
+        var name = source.GetReferenceName(reference);
+        var loaded = sessions.Values.FirstOrDefault(s => string.Equals(s.Descriptor.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (loaded is not null) return loaded.Descriptor;
+        var path = source.ResolveReferencePath(name)
+            ?? throw new FileNotFoundException($"Could not find referenced assembly '{name}' beside {Path.GetFileName(source.Descriptor.Path)}.");
+        return await OpenAsync(path, cancellationToken);
+    }
+
     public Task CloseAsync(Guid sessionId)
     {
         if (sessions.TryRemove(sessionId, out var session)) session.Dispose();
@@ -145,6 +156,28 @@ internal sealed class AssemblySession : IDisposable
         if (parent.Value.StartsWith("type:", StringComparison.Ordinal)) return TypeChildren(MetadataTokens.TypeDefinitionHandle(ParseToken(parent)), ct);
         if (parent.Value.StartsWith("member:", StringComparison.Ordinal)) return AccessorChildren(MetadataTokens.EntityHandle(ParseToken(parent)));
         return [];
+    }
+
+    public string GetReferenceName(NodeId reference)
+    {
+        if (!reference.Value.StartsWith("ref:", StringComparison.Ordinal) ||
+            !int.TryParse(reference.Value.AsSpan(4), out var token)) throw new ArgumentException("The node is not an assembly reference.", nameof(reference));
+        var handle = MetadataTokens.EntityHandle(token);
+        if (handle.Kind != HandleKind.AssemblyReference) throw new ArgumentException("The node is not an assembly reference.", nameof(reference));
+        return metadata.GetString(metadata.GetAssemblyReference((AssemblyReferenceHandle)handle).Name);
+    }
+
+    public string? ResolveReferencePath(string name)
+    {
+        var directory = Path.GetDirectoryName(Descriptor.Path)!;
+        foreach (var extension in new[] { ".dll", ".exe", ".winmd" })
+        {
+            var exact = Path.Combine(directory, name + extension);
+            if (File.Exists(exact)) return exact;
+        }
+        return Directory.EnumerateFiles(directory).FirstOrDefault(path =>
+            string.Equals(Path.GetFileNameWithoutExtension(path), name, StringComparison.OrdinalIgnoreCase) &&
+            Path.GetExtension(path) is var extension && (extension.Equals(".dll", StringComparison.OrdinalIgnoreCase) || extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) || extension.Equals(".winmd", StringComparison.OrdinalIgnoreCase)));
     }
 
     private TreeNodeDescriptor TypeNode(TypeDefinitionHandle h)
