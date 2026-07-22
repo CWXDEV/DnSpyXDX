@@ -1,14 +1,8 @@
 # DnSpyXDX
 
 <p align="center">
-  <img src="src/DecompilerApp.UI/wwwroot/images/dnspyxdx-logo.webp" width="88" height="88" alt="DnSpyXDX logo">
-</p>
-
-<p align="center">
   <img src="src/DecompilerApp.UI/wwwroot/images/xdding.webp" width="400" alt="DnSpyXDX animation">
 </p>
-
-> A fast, cross-platform desktop explorer for inspecting, searching, decompiling, and exporting managed .NET assemblies—without loading or executing them.
 
 DnSpyXDX is a focused, read-only assembly browser for Windows and Linux. It combines a native Photino window, a Blazor interface, and the ILSpy decompiler engine to provide a compact desktop workflow for understanding compiled C# applications and libraries.
 
