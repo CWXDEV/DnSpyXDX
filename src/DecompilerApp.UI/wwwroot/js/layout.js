@@ -3,7 +3,6 @@ window.babyDnSpy.initExplorerResize = function (explorer, dotNet) {
   if (!explorer || explorer.dataset.resizeReady) return;
   explorer.dataset.resizeReady = "true";
   const handle = explorer.querySelector(".explorer-resizer");
-  handle.style.transform = "translateX(" + explorer.getBoundingClientRect().width + "px)";
   handle.addEventListener("pointerdown", event => {
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
@@ -14,7 +13,6 @@ window.babyDnSpy.initExplorerResize = function (explorer, dotNet) {
       const maximum = window.innerWidth * 0.65;
       const width = Math.max(190, Math.min(maximum, startWidth + moveEvent.clientX - startX));
       explorer.style.width = width + "px";
-      handle.style.transform = "translateX(" + width + "px)";
     };
     const stop = () => {
       document.body.classList.remove("resizing-explorer");

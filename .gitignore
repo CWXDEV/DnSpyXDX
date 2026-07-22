@@ -59,3 +59,6 @@ window.json
 .clrvoyant-export-*/
 .managedlens-export-*/
 .baby-dnspy-*/
+
+# Local assemblies
+Assembly-CSharp.dll

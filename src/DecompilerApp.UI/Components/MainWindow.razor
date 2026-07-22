@@ -24,12 +24,14 @@
     </div>
   </header>
   <main>
-    <aside class="explorer" @ref="explorer" style="width:@($"{explorerWidth}px")">
-      <div class="panel-title">ASSEMBLIES</div>
-      @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
-      @foreach (var assembly in Backend.Assemblies) { <TreeNode Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="symbol => OpenSymbolAsync(symbol)" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" /> }
+    <div class="explorer-pane" @ref="explorer" style="width:@($"{explorerWidth}px")">
+      <aside class="explorer">
+        <div class="panel-title">ASSEMBLIES</div>
+        @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
+        @foreach (var assembly in Backend.Assemblies) { <TreeNode Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" /> }
+      </aside>
       <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
-    </aside>
+    </div>
     <section class="document-area">
       <nav class="tabs">
         @foreach (var tab in Workspace.Tabs) { <button class="tab @(Workspace.ActiveTabId == tab.Id ? "active" : null)" @onclick="() => Workspace.Activate(tab.Id)" @onmouseup="e => TabMouseUp(e, tab.Id)" @onmousedown:preventDefault="true"><span>@tab.Title</span><small>@tab.AssemblyName</small><i @onclick:stopPropagation @onclick="() => Workspace.Close(tab.Id)">×</i></button> }
@@ -44,7 +46,7 @@
           <div class="search-results">
             @if (results.Count == 0) { <div class="no-results">@(string.IsNullOrWhiteSpace(query) ? "Type a name to search across open assemblies." : "No matching types or members.")</div> }
             @foreach (var result in results) {
-              <button class="search-result" @onclick="() => OpenSearchResultAsync(result)">
+              <button class="search-result" @onclick="e => OpenSearchResultAsync(result, e.CtrlKey)">
                 <span class="result-kind result-@result.Kind.ToLowerInvariant()">@result.Kind</span><span class="result-name">@result.Name</span><span class="result-namespace">@result.Namespace</span><span class="result-assembly">@result.AssemblyName</span>
               </button>
             }
@@ -113,7 +115,8 @@
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
   private async Task UnloadAllAsync() { menuOpen = false; Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
   private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false) { selectedSymbol = symbol; Workspace.SetBusy(true, "Decompiling…"); try { var doc = await Backend.DecompileAsync(symbol); var name = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly"; Workspace.Open(doc, name, newTab); Workspace.SetBusy(false, $"Decompiled {doc.Title}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
-  private async Task OpenSearchResultAsync(SearchResult result) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol); StateHasChanged(); }
+  private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab);
+  private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab); StateHasChanged(); }
   private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab); StateHasChanged(); }
   private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) Workspace.Close(id); }
   [JSInvokable] public async Task NavigateHistory(bool forward)
