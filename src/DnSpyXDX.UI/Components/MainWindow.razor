@@ -47,8 +47,11 @@
       @if (searchOpen) {
         <section class="search-panel" @ref="searchPanel" style="height:@($"{searchPanelHeight}px")">
           <div class="search-resizer" title="Drag to resize search results"></div>
-          <header><strong>Search</strong><input @ref="searchInput" @bind="query" @bind:event="oninput" @onkeydown="SearchKey" placeholder="Type or member name…" /><select @bind="searchKind" @bind:after="LayoutOptionChanged" title="Member type"><option value="All">All members</option><option value="Type">Types</option><option value="Method">Methods</option><option value="Field">Fields</option><option value="Property">Properties</option><option value="Event">Events</option></select><select @bind="searchScope" @bind:after="LayoutOptionChanged" title="Assembly scope"><option value="All">All assemblies</option><option value="Selected" disabled="@(SelectedAssemblyMvid is null)">Selected assembly</option></select><button class="run-search" @onclick="SearchAsync">Search</button><small>@results.Count result@(results.Count == 1 ? "" : "s")</small><button class="close-search" title="Close search" @onclick="CloseSearch">×</button></header>
+          <header><strong>Search</strong><input @ref="searchInput" @bind="query" @bind:event="oninput" @bind:after="QueueSearch" @onkeydown="SearchKey" placeholder="Type or member name…" /><select @bind="searchKind" @bind:after="LayoutOptionChanged" title="Member type"><option value="All">All members</option><option value="Type">Types</option><option value="Method">Methods</option><option value="Field">Fields</option><option value="Property">Properties</option><option value="Event">Events</option></select><select @bind="searchScope" @bind:after="LayoutOptionChanged" title="Assembly scope"><option value="All">All assemblies</option><option value="Selected" disabled="@(SelectedAssemblyMvid is null)">Selected assembly</option></select><button class="run-search" @onclick="SearchAsync">Search</button><small>@results.Count result@(results.Count == 1 ? "" : "s")</small><button class="close-search" title="Close search" @onclick="CloseSearch">×</button></header>
           <div class="search-results">
+            <div class="search-results-header" role="row">
+              <span role="columnheader">Type</span><span role="columnheader">Name</span><span role="columnheader">Namespace</span><span role="columnheader">Assembly</span>
+            </div>
             @if (results.Count == 0) { <div class="no-results">@(string.IsNullOrWhiteSpace(query) ? "Type a name to search across open assemblies." : "No matching types or members.")</div> }
             @foreach (var result in results) {
               <button class="search-result" @onclick="e => OpenSearchResultAsync(result, e.CtrlKey)">
@@ -71,6 +74,7 @@
   private SymbolId? selectedSymbol;
   private Guid? SelectedAssemblyMvid => selectedSymbol?.ModuleMvid ?? Workspace.ActiveTab?.Document.Symbol.ModuleMvid;
   private CancellationTokenSource? saveDelay;
+  private CancellationTokenSource? searchDelay;
   private bool restoring;
   private IReadOnlyList<SearchResult> results = [];
   private bool searchOpen;
@@ -134,7 +138,10 @@
     revealedPath = (await Backend.GetPathAsync(tab.Document.Symbol)).ToHashSet();
     StateHasChanged();
   }
-  private async Task SearchAsync() { var found = await Backend.SearchAsync(query); var selectedMvid = SelectedAssemblyMvid; results = found.Where(r => searchKind == "All" || r.Kind == searchKind).Where(r => searchScope == "All" || selectedMvid is not null && r.Symbol.ModuleMvid == selectedMvid).ToArray(); searchOpen = true; StateHasChanged(); }
+  private void QueueSearch() { searchDelay?.Cancel(); searchDelay?.Dispose(); searchDelay = new CancellationTokenSource(); _ = SearchAfterDelayAsync(searchDelay.Token); }
+  private async Task SearchAfterDelayAsync(CancellationToken token) { try { await Task.Delay(500, token); await RunSearchAsync(token); } catch (OperationCanceledException) { } }
+  private async Task SearchAsync() { searchDelay?.Cancel(); searchDelay?.Dispose(); searchDelay = new CancellationTokenSource(); try { await RunSearchAsync(searchDelay.Token); } catch (OperationCanceledException) { } }
+  private async Task RunSearchAsync(CancellationToken token) { var found = await Backend.SearchAsync(query, token); token.ThrowIfCancellationRequested(); var selectedMvid = SelectedAssemblyMvid; results = found.Where(r => searchKind == "All" || r.Kind == searchKind).Where(r => searchScope == "All" || selectedMvid is not null && r.Symbol.ModuleMvid == selectedMvid).ToArray(); searchOpen = true; StateHasChanged(); }
   private void CloseSearch() { searchOpen = false; ScheduleSave(); StateHasChanged(); }
   private void LayoutOptionChanged() => ScheduleSave();
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
@@ -168,5 +175,5 @@
     }
     catch (Exception ex) { Workspace.SetBusy(false, $"Solution extraction failed: {ex.Message}"); }
   }
-  public void Dispose() { Workspace.Changed -= Refresh; saveDelay?.Cancel(); saveDelay?.Dispose(); selfReference?.Dispose(); }
+  public void Dispose() { Workspace.Changed -= Refresh; saveDelay?.Cancel(); saveDelay?.Dispose(); searchDelay?.Cancel(); searchDelay?.Dispose(); selfReference?.Dispose(); }
 }

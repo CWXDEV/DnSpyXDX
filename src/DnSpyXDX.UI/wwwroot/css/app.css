@@ -35,7 +35,7 @@
 /* dnSpy-style search results pane */
 .document-area{grid-template-rows:40px minmax(0,1fr) auto}
 .document-content{position:relative;min-width:0;min-height:0;overflow:hidden}
-.document-content>.source-header+.source{height:calc(100% - 32px)}
+.document-content>.source{height:calc(100% - 32px)}
 .document-content>.welcome{height:100%}
 .search-panel{position:relative;height:230px;min-height:120px;max-height:65vh;overflow:hidden;display:grid;grid-template-rows:34px 1fr;background:#11161f;border-top:2px solid #39445a}
 .search-resizer{position:absolute;left:0;right:0;top:-6px;height:11px;cursor:row-resize;z-index:25;touch-action:none}
@@ -46,13 +46,19 @@
 .search-panel>header small{color:#74829a}
 .search-panel>header button{margin-left:auto;width:27px;height:27px;border:0;background:transparent;color:#9ba8bc;font-size:19px;border-radius:4px}
 .search-panel>header button:hover{background:#293246;color:#fff}
-.search-results{overflow:scroll;padding:3px 0}
-.search-result{width:100%;display:grid;grid-template-columns:82px minmax(180px,1.2fr) minmax(160px,1fr) minmax(130px,.7fr);align-items:center;gap:10px;border:0;background:transparent;color:#d4d4d4;text-align:left;padding:5px 12px}
+.search-results{overflow:scroll;padding:3px 0;display:grid;grid-template-columns:max-content max-content minmax(max-content,1fr) max-content;column-gap:10px;align-content:start}
+.search-results-header,.search-result{grid-column:1/-1;width:100%;display:grid;grid-template-columns:subgrid;align-items:center;padding:5px 12px}
+.search-results-header{position:sticky;top:0;z-index:1;background:#171d28;border-bottom:1px solid #2b3444;color:#8da0bf;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.search-results-header>span:nth-child(n+3),.search-result>span:nth-child(n+3){width:100%;text-align:right}
+.search-results-header>span:nth-child(3),.search-result>span:nth-child(3){padding-left:24px}
+.search-results-header>span{position:relative;height:100%;display:flex;align-items:center}.search-results-header>span:nth-child(n+3){justify-content:flex-end}
+.search-results-header>span:not(:last-child),.search-result>span:not(:last-child){border-right:1px solid #30394a;padding-right:10px}
+.search-result{border:0;background:transparent;color:#d4d4d4;text-align:left}
 .search-result:hover{background:#202a3a}
 .result-kind{font-size:10px;text-transform:uppercase;color:#8090aa}
 .result-kind.result-method{color:#dcdcaa}.result-kind.result-field{color:#c586c0}.result-kind.result-property,.result-kind.result-event{color:#9cdcfe}.result-kind.result-type{color:#4ec9b0}
 .result-name{color:#f0f2f6}.result-namespace{color:#d7ba7d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result-assembly{color:#76869f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.no-results{padding:20px;color:#7e8ba0}
+.no-results{grid-column:1/-1;padding:20px;color:#7e8ba0}
 .tree-row.selected{background:#293957;box-shadow:inset 2px 0 #7c72ff}.tree-row.selected:hover{background:#314567}
 
 /* Compact dnSpy-style inline member signatures */
