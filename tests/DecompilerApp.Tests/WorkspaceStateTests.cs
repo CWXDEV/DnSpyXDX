@@ -108,4 +108,18 @@ public sealed class WorkspaceStateTests
 
         Assert.Equal("Type2", workspace.ActiveTab!.Title);
     }
+
+    [Fact]
+    public void Plain_navigation_opens_a_tab_after_the_last_tab_is_closed()
+    {
+        var workspace = new WorkspaceState();
+        workspace.Open(Document(1), "Sample");
+        workspace.Close(workspace.Tabs[0].Id);
+
+        workspace.Open(Document(2), "Sample");
+
+        var tab = Assert.Single(workspace.Tabs);
+        Assert.Equal("Type2", tab.Title);
+        Assert.Equal(tab.Id, workspace.ActiveTabId);
+    }
 }
