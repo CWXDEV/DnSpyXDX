@@ -1,3 +1,4 @@
+using DecompilerApp.Application;
 using DecompilerApp.Decompilation;
 using Xunit;
 
@@ -37,5 +38,92 @@ public sealed class DecompilerBackendTests
         Assert.Contains("RID:", document.Text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Decompiled_documents_carry_links_for_types_in_the_same_assembly()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var namespaces = await backend.GetChildrenAsync((await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "Namespaces").Id);
+        var types = await backend.GetChildrenAsync(namespaces.Single(n => n.Name == "DecompilerApp.Tests").Id);
+        var testType = types.Single(n => n.Name == nameof(DecompilerBackendTests));
+
+        var document = await backend.DecompileAsync(testType.Symbol!.Value);
+
+        Assert.NotNull(document.SymbolLinks);
+        Assert.Equal(testType.Symbol!.Value, document.SymbolLinks![nameof(DecompilerBackendTests)]);
+        Assert.True(document.SymbolLinks.ContainsKey(nameof(CodeHighlighterTests)));
+        // Members of the type on screen are linkable too, scoped to that type.
+        Assert.True(document.SymbolLinks.ContainsKey(nameof(Opens_browses_and_decompiles_a_managed_assembly)));
+    }
+
+    [Fact]
+    public async Task Orders_members_the_way_dnSpys_assembly_explorer_does()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var namespaces = await backend.GetChildrenAsync((await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "Namespaces").Id);
+        var types = await backend.GetChildrenAsync(namespaces.Single(n => n.Name == "DecompilerApp.Tests").Id);
+
+        var members = await backend.GetChildrenAsync(types.Single(n => n.Name == nameof(SampleMembers)).Id);
+
+        // methods (constructors included) -> properties -> events -> fields -> nested types
+        var groups = members.Select(m => Group(m.Kind)).ToArray();
+        Assert.Equal(groups.OrderBy(g => g), groups);
+        Assert.Equal([0, 1, 2, 3, 4], groups.Distinct());
+        // The constructor sits in the method group rather than in one of its own.
+        Assert.Contains(members.TakeWhile(m => m.Kind != TreeNodeKind.Property), m => m.Kind == TreeNodeKind.Constructor);
+    }
+
+    [Fact]
+    public async Task Hides_property_and_event_accessors_from_the_method_list()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var namespaces = await backend.GetChildrenAsync((await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "Namespaces").Id);
+        var types = await backend.GetChildrenAsync(namespaces.Single(n => n.Name == "DecompilerApp.Tests").Id);
+
+        var members = await backend.GetChildrenAsync(types.Single(n => n.Name == nameof(SampleMembers)).Id);
+
+        Assert.DoesNotContain(members, m => m.Name.StartsWith("get_", StringComparison.Ordinal));
+        Assert.DoesNotContain(members, m => m.Name.StartsWith("set_", StringComparison.Ordinal));
+        Assert.DoesNotContain(members, m => m.Name.StartsWith("add_", StringComparison.Ordinal));
+        Assert.DoesNotContain(members, m => m.Name.StartsWith("remove_", StringComparison.Ordinal));
+        Assert.Contains(members, m => m.Name == nameof(SampleMembers.SampleMethod));
+
+        // They are reachable by expanding the property or event that owns them.
+        var property = members.Single(m => m.Kind == TreeNodeKind.Property);
+        Assert.True(property.HasChildren);
+        var accessors = await backend.GetChildrenAsync(property.Id);
+        Assert.Equal(["get_SampleProperty", "set_SampleProperty"], accessors.Select(a => a.Name));
+
+        var @event = members.Single(m => m.Kind == TreeNodeKind.Event);
+        Assert.True(@event.HasChildren);
+        var eventAccessors = await backend.GetChildrenAsync(@event.Id);
+        Assert.Equal(["add_SampleEvent", "remove_SampleEvent"], eventAccessors.Select(a => a.Name));
+    }
+
+    private static int Group(TreeNodeKind kind) => kind switch
+    {
+        TreeNodeKind.Constructor or TreeNodeKind.Method => 0,
+        TreeNodeKind.Property => 1,
+        TreeNodeKind.Event => 2,
+        TreeNodeKind.Field => 3,
+        TreeNodeKind.Type => 4,
+        _ => 5
+    };
+
     private enum SampleEnum { One }
 }
+
+#pragma warning disable CS0067, CS0649 // this sample exists purely to be read back out of metadata
+/// <summary>A top-level type carrying one of every member kind, so member ordering can be asserted
+/// against something stable rather than whatever a test class happens to contain.</summary>
+public sealed class SampleMembers
+{
+    public int SampleField;
+    public int SampleProperty { get; set; }
+    public event Action? SampleEvent;
+    public void SampleMethod() { }
+    public sealed class SampleNested { }
+}
+#pragma warning restore CS0067, CS0649

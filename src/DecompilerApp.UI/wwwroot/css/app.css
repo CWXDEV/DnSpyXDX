@@ -82,3 +82,9 @@
 .search-panel>header .run-search{width:auto;height:27px;margin-left:0;padding:0 11px;border:1px solid #3b465b;background:#222b3a;color:#dce5f5;font-size:12px}.search-panel>header .run-search:hover{background:#303b50}.search-panel>header .close-search{margin-left:4px}
 .search-panel>header select{color-scheme:dark;height:27px;max-width:145px;border:1px solid #354157;background:#151b25;color:#cfd8e7;border-radius:4px;padding:0 22px 0 7px;outline:none;cursor:pointer}.search-panel>header select:focus{border-color:#7868f6}.search-panel>header select:disabled{opacity:.45;cursor:not-allowed}.search-panel>header select option{color-scheme:dark;background:#151b25;color:#cfd8e7}.search-panel>header select option:checked{background:#33415a;color:#fff}
 :root{color-scheme:dark}
+
+/* Go-to-definition links in decompiled source. dnSpy boxes every occurrence of the
+   identifier under the pointer; the negative margin cancels the padding so the box
+   cannot shift monospace alignment. */
+.code-link{cursor:pointer;border-radius:2px;padding:0 1px;margin:0 -1px}
+.code-link.code-link-active{background:#264f78;box-shadow:inset 0 0 0 1px #4e87c0}

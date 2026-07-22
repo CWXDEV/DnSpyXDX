@@ -54,6 +54,65 @@ window.babyDnSpy.initSearchResize = function (panel, dotNet) {
     handle.addEventListener("pointercancel", stop);
   });
 };
+window.babyDnSpy.initSourceLinks = function (source, dotNet) {
+  if (!source || source.dataset.linksReady) return;
+  source.dataset.linksReady = "true";
+  let highlighted = [];
+  let highlightedSymbol = null;
+  const clearHighlight = () => {
+    highlighted.forEach(node => node.classList.remove("code-link-active"));
+    highlighted = [];
+    highlightedSymbol = null;
+  };
+  const linkAt = event => {
+    const link = event.target.closest(".code-link");
+    return link && source.contains(link) ? link : null;
+  };
+  source.addEventListener("mouseover", event => {
+    const link = linkAt(event);
+    if (!link) { clearHighlight(); return; }
+    if (link.dataset.symbol === highlightedSymbol) return;
+    clearHighlight();
+    // Box every occurrence of the same symbol, the way dnSpy marks references. Grouping is by
+    // name rather than token so overload sets still highlight together.
+    highlightedSymbol = link.dataset.symbol;
+    highlighted = Array.from(source.querySelectorAll('.code-link[data-symbol="' + CSS.escape(highlightedSymbol) + '"]'));
+    highlighted.forEach(node => node.classList.add("code-link-active"));
+  });
+  source.addEventListener("mouseleave", clearHighlight);
+  source.addEventListener("click", event => {
+    const link = linkAt(event);
+    // dnSpy follows a reference only when no modifier or Ctrl is held; Alt and Shift are left
+    // alone so they can start a text selection. Names without a token are highlight-only.
+    if (!link || !link.dataset.token || event.altKey || event.shiftKey) return;
+    event.preventDefault();
+    clearHighlight();
+    dotNet.invokeMethodAsync("NavigateToToken", Number(link.dataset.token), event.ctrlKey);
+  });
+};
+window.babyDnSpy.initHistoryButtons = function (dotNet) {
+  if (window.babyDnSpy.historyReady) return;
+  window.babyDnSpy.historyReady = true;
+  // Mouse 4 / mouse 5. Chromium fires these as buttons 3 and 4; preventing the default on
+  // mousedown stops the webview treating them as browser back/forward.
+  window.addEventListener("mousedown", event => {
+    if (event.button === 3 || event.button === 4) event.preventDefault();
+  });
+  window.addEventListener("mouseup", event => {
+    if (event.button !== 3 && event.button !== 4) return;
+    event.preventDefault();
+    dotNet.invokeMethodAsync("NavigateHistory", event.button === 4);
+  });
+  window.addEventListener("keydown", event => {
+    if (!event.altKey || event.ctrlKey || event.shiftKey) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    dotNet.invokeMethodAsync("NavigateHistory", event.key === "ArrowRight");
+  });
+};
+window.babyDnSpy.scrollSourceToTop = function (source) {
+  if (source) source.scrollTop = 0;
+};
 window.babyDnSpy.scrollTreeNodeIntoView = function (row) {
   if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 };

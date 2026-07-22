@@ -1,3 +1,34 @@
+@implements IDisposable
+@inject IJSRuntime JS
+
 <div class="source-header"><span>C#</span><span>@Document.Title</span></div>
-<pre class="source"><code>@((MarkupString)CodeHighlighter.Highlight(Document.Text))</code></pre>
-@code { [Parameter, EditorRequired] public DecompilerDocument Document { get; set; } = null!; }
+<pre class="source" @ref="source"><code>@((MarkupString)CodeHighlighter.Highlight(Document.Text, Document.SymbolLinks))</code></pre>
+
+@code {
+  [Parameter, EditorRequired] public DecompilerDocument Document { get; set; } = null!;
+  [Parameter] public EventCallback<NavigationRequest> OnNavigate { get; set; }
+  private ElementReference source;
+  private DotNetObjectReference<SourceView>? selfReference;
+  private SymbolId? renderedSymbol;
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      selfReference = DotNetObjectReference.Create(this);
+      await JS.InvokeVoidAsync("babyDnSpy.initSourceLinks", source, selfReference);
+    }
+    // The pre element is reused across documents, so its scroll offset has to be reset by hand
+    // when a different symbol is shown.
+    if (renderedSymbol != Document.Symbol)
+    {
+      renderedSymbol = Document.Symbol;
+      await JS.InvokeVoidAsync("babyDnSpy.scrollSourceToTop", source);
+    }
+  }
+
+  [JSInvokable]
+  public Task NavigateToToken(int token, bool newTab) => OnNavigate.InvokeAsync(new NavigationRequest(new SymbolId(Document.Symbol.ModuleMvid, token), newTab));
+
+  public void Dispose() => selfReference?.Dispose();
+}

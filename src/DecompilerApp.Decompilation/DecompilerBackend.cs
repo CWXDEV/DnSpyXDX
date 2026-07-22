@@ -82,6 +82,7 @@ internal sealed class AssemblySession : IDisposable
     private readonly MetadataTypeNameProvider typeNames;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<int, DecompilerDocument> cache = [];
+    private IReadOnlyDictionary<string, SymbolId>? typeLinks;
     public AssemblyDescriptor Descriptor { get; }
 
     private AssemblySession(PEFile module, CSharpDecompiler decompiler, AssemblyDescriptor descriptor)
@@ -142,6 +143,7 @@ internal sealed class AssemblySession : IDisposable
             }).Select(TypeNode).OrderBy(x => x.Name).ToArray();
         }
         if (parent.Value.StartsWith("type:", StringComparison.Ordinal)) return TypeChildren(MetadataTokens.TypeDefinitionHandle(ParseToken(parent)), ct);
+        if (parent.Value.StartsWith("member:", StringComparison.Ordinal)) return AccessorChildren(MetadataTokens.EntityHandle(ParseToken(parent)));
         return [];
     }
 
@@ -156,18 +158,93 @@ internal sealed class AssemblySession : IDisposable
     {
         var t = metadata.GetTypeDefinition(handle);
         var nodes = new List<TreeNodeDescriptor>();
+        // dnSpy hangs property and event accessors off their owning node rather than listing them
+        // beside real methods; without this the method list is mostly get_/set_/add_/remove_ noise.
+        var accessors = PropertyAndEventMethods(t);
         foreach (var h in t.GetFields()) { ct.ThrowIfCancellationRequested(); var x = metadata.GetFieldDefinition(h); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Field, MemberVisibility(x.Attributes), x.DecodeSignature(typeNames, null))); }
-        foreach (var h in t.GetProperties()) { var x = metadata.GetPropertyDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Property, AccessorVisibility(access.Getter, access.Setter), x.DecodeSignature(typeNames, null).ReturnType)); }
-        foreach (var h in t.GetEvents()) { var x = metadata.GetEventDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Event, AccessorVisibility(access.Adder, access.Remover), typeNames.GetTypeName(x.Type))); }
-        foreach (var h in t.GetMethods()) { var x = metadata.GetMethodDefinition(h); var name = metadata.GetString(x.Name); var kind = name is ".ctor" or ".cctor" ? TreeNodeKind.Constructor : TreeNodeKind.Method; nodes.Add(MemberNode(h, kind == TreeNodeKind.Constructor ? metadata.GetString(t.Name) : name, kind, MemberVisibility(x.Attributes), kind == TreeNodeKind.Constructor ? null : x.DecodeSignature(typeNames, null).ReturnType)); }
+        foreach (var h in t.GetProperties()) { var x = metadata.GetPropertyDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Property, AccessorVisibility(access.Getter, access.Setter), x.DecodeSignature(typeNames, null).ReturnType, HasAny(access.Getter, access.Setter))); }
+        foreach (var h in t.GetEvents()) { var x = metadata.GetEventDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Event, AccessorVisibility(access.Adder, access.Remover), typeNames.GetTypeName(x.Type), HasAny(access.Adder, access.Remover, access.Raiser))); }
+        foreach (var h in t.GetMethods()) { ct.ThrowIfCancellationRequested(); if (!accessors.Contains(h)) nodes.Add(MethodNode(h, t)); }
         nodes.AddRange(t.GetNestedTypes().Select(TypeNode));
-        return nodes.OrderBy(n => n.Kind).ThenBy(n => n.Name).ToArray();
+        return nodes.OrderBy(n => MemberRank(n.Kind)).ThenBy(n => n.Name).ToArray();
     }
 
-    private TreeNodeDescriptor MemberNode(EntityHandle h, string name, TreeNodeKind kind, string visibility, string? typeDisplay)
+    private TreeNodeDescriptor MethodNode(MethodDefinitionHandle h, TypeDefinition declaringType)
+    {
+        var x = metadata.GetMethodDefinition(h);
+        var name = metadata.GetString(x.Name);
+        var isConstructor = name is ".ctor" or ".cctor";
+        return MemberNode(h,
+            isConstructor ? metadata.GetString(declaringType.Name) : name,
+            isConstructor ? TreeNodeKind.Constructor : TreeNodeKind.Method,
+            MemberVisibility(x.Attributes),
+            isConstructor ? null : x.DecodeSignature(typeNames, null).ReturnType);
+    }
+
+    private HashSet<MethodDefinitionHandle> PropertyAndEventMethods(TypeDefinition type)
+    {
+        var accessors = new HashSet<MethodDefinitionHandle>();
+        foreach (var h in type.GetProperties())
+        {
+            var access = metadata.GetPropertyDefinition(h).GetAccessors();
+            AddAccessor(accessors, access.Getter, access.Setter);
+            foreach (var other in access.Others) AddAccessor(accessors, other);
+        }
+        foreach (var h in type.GetEvents())
+        {
+            var access = metadata.GetEventDefinition(h).GetAccessors();
+            AddAccessor(accessors, access.Adder, access.Remover, access.Raiser);
+            foreach (var other in access.Others) AddAccessor(accessors, other);
+        }
+        return accessors;
+    }
+
+    private IReadOnlyList<TreeNodeDescriptor> AccessorChildren(EntityHandle owner)
+    {
+        IEnumerable<MethodDefinitionHandle> handles;
+        TypeDefinitionHandle declaring;
+        if (owner.Kind == HandleKind.PropertyDefinition)
+        {
+            var access = metadata.GetPropertyDefinition((PropertyDefinitionHandle)owner).GetAccessors();
+            handles = new[] { access.Getter, access.Setter }.Concat(access.Others);
+            declaring = DeclaringTypeOf(owner);
+        }
+        else if (owner.Kind == HandleKind.EventDefinition)
+        {
+            var access = metadata.GetEventDefinition((EventDefinitionHandle)owner).GetAccessors();
+            handles = new[] { access.Adder, access.Remover, access.Raiser }.Concat(access.Others);
+            declaring = DeclaringTypeOf(owner);
+        }
+        else return [];
+        if (declaring.IsNil) return [];
+        var type = metadata.GetTypeDefinition(declaring);
+        return handles.Where(h => !h.IsNil).Select(h => MethodNode(h, type)).OrderBy(n => n.Name).ToArray();
+    }
+
+    private static void AddAccessor(HashSet<MethodDefinitionHandle> accessors, params MethodDefinitionHandle[] handles)
+    {
+        foreach (var handle in handles) if (!handle.IsNil) accessors.Add(handle);
+    }
+
+    private static bool HasAny(params MethodDefinitionHandle[] handles) => handles.Any(h => !h.IsNil);
+
+    // dnSpy's assembly explorer order, from DocumentTreeViewConstants: methods (200), properties
+    // (300), events (400), fields (500), nested types (600). Constructors have no group of their
+    // own there - they sort by name among the methods.
+    private static int MemberRank(TreeNodeKind kind) => kind switch
+    {
+        TreeNodeKind.Constructor or TreeNodeKind.Method => 200,
+        TreeNodeKind.Property => 300,
+        TreeNodeKind.Event => 400,
+        TreeNodeKind.Field => 500,
+        TreeNodeKind.Type => 600,
+        _ => 700
+    };
+
+    private TreeNodeDescriptor MemberNode(EntityHandle h, string name, TreeNodeKind kind, string visibility, string? typeDisplay, bool hasChildren = false)
     {
         var token = MetadataTokens.GetToken(h);
-        return new(new NodeId(Descriptor.SessionId, $"member:{token:X8}"), name, kind, false, new SymbolId(Descriptor.ModuleMvid, token), Visibility: visibility, TypeDisplay: typeDisplay, NameClassification: kind.ToString().ToLowerInvariant(), TypeClassification: IsStandardType(typeDisplay) ? "standard" : "type");
+        return new(new NodeId(Descriptor.SessionId, $"member:{token:X8}"), name, kind, hasChildren, new SymbolId(Descriptor.ModuleMvid, token), Visibility: visibility, TypeDisplay: typeDisplay, NameClassification: kind.ToString().ToLowerInvariant(), TypeClassification: IsStandardType(typeDisplay) ? "standard" : "type");
     }
 
     private bool IsEnum(TypeDefinition definition)
@@ -212,12 +289,72 @@ internal sealed class AssemblySession : IDisposable
             var handle = MetadataTokens.EntityHandle(symbol.MetadataToken);
             var text = await Task.Run(() => AddTokenComments(decompiler.DecompileAsString([handle]), handle), ct);
             var title = GetEntityName(handle);
-            var result = new DecompilerDocument(symbol, title, "csharp", text, [], []);
+            var result = new DecompilerDocument(symbol, title, "csharp", text, [], [], BuildSymbolLinks(handle));
             cache[symbol.MetadataToken] = result;
             return result;
         }
         finally { gate.Release(); }
     }
+
+    private IReadOnlyDictionary<string, SymbolId> TypeLinks => typeLinks ??= BuildTypeLinks();
+
+    // Maps the simple type names that appear in decompiled source back to their definitions so the
+    // UI can turn them into go-to-definition links. Names shared by several types are dropped
+    // rather than guessed at, so a click never lands on the wrong class.
+    private IReadOnlyDictionary<string, SymbolId> BuildTypeLinks()
+    {
+        var byName = new Dictionary<string, SymbolId>(StringComparer.Ordinal);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var h in metadata.TypeDefinitions)
+        {
+            var name = metadata.GetString(metadata.GetTypeDefinition(h).Name);
+            if (name.StartsWith('<')) continue;
+            var display = name.Split('`')[0];
+            if (display.Length == 0) continue;
+            if (!byName.TryAdd(display, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)))) ambiguous.Add(display);
+        }
+        foreach (var name in ambiguous) byName.Remove(name);
+        return byName;
+    }
+
+    // Every identifier the viewer can highlight in one document: assembly-wide type names plus the
+    // members of the type being shown. Members are scoped to that type so a name like "value"
+    // resolves here rather than to an unrelated class. A null target means the name is highlightable
+    // but not navigable, which is how overloads are handled - all of them light up, none of them
+    // wins the click.
+    private IReadOnlyDictionary<string, SymbolId?> BuildSymbolLinks(EntityHandle selected)
+    {
+        var links = new Dictionary<string, SymbolId?>(StringComparer.Ordinal);
+        foreach (var pair in TypeLinks) links[pair.Key] = pair.Value;
+
+        var typeHandle = DeclaringTypeOf(selected);
+        if (typeHandle.IsNil) return links;
+        var type = metadata.GetTypeDefinition(typeHandle);
+        var declared = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddMember(EntityHandle handle, string name)
+        {
+            if (name.Length == 0 || name.StartsWith('<') || name is ".ctor" or ".cctor") return;
+            // A member shadows a same-named type; a repeated member name is an overload set.
+            links[name] = declared.Add(name) ? new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(handle)) : null;
+        }
+
+        foreach (var h in type.GetFields()) AddMember(h, metadata.GetString(metadata.GetFieldDefinition(h).Name));
+        foreach (var h in type.GetProperties()) AddMember(h, metadata.GetString(metadata.GetPropertyDefinition(h).Name));
+        foreach (var h in type.GetEvents()) AddMember(h, metadata.GetString(metadata.GetEventDefinition(h).Name));
+        foreach (var h in type.GetMethods()) AddMember(h, metadata.GetString(metadata.GetMethodDefinition(h).Name));
+        return links;
+    }
+
+    private TypeDefinitionHandle DeclaringTypeOf(EntityHandle handle) => handle.Kind switch
+    {
+        HandleKind.TypeDefinition => (TypeDefinitionHandle)handle,
+        HandleKind.MethodDefinition => metadata.GetMethodDefinition((MethodDefinitionHandle)handle).GetDeclaringType(),
+        HandleKind.FieldDefinition => metadata.GetFieldDefinition((FieldDefinitionHandle)handle).GetDeclaringType(),
+        HandleKind.PropertyDefinition => metadata.GetPropertyDefinition((PropertyDefinitionHandle)handle).GetAccessors() is var a && !a.Getter.IsNil ? metadata.GetMethodDefinition(a.Getter).GetDeclaringType() : FindPropertyDeclaringType((PropertyDefinitionHandle)handle),
+        HandleKind.EventDefinition => metadata.GetEventDefinition((EventDefinitionHandle)handle).GetAccessors() is var e && !e.Adder.IsNil ? metadata.GetMethodDefinition(e.Adder).GetDeclaringType() : FindEventDeclaringType((EventDefinitionHandle)handle),
+        _ => default
+    };
 
     private string AddTokenComments(string source, EntityHandle selected)
     {
@@ -293,15 +430,7 @@ internal sealed class AssemblySession : IDisposable
     {
         ct.ThrowIfCancellationRequested();
         var handle = MetadataTokens.EntityHandle(symbol.MetadataToken);
-        var typeHandle = handle.Kind switch
-        {
-            HandleKind.TypeDefinition => (TypeDefinitionHandle)handle,
-            HandleKind.MethodDefinition => metadata.GetMethodDefinition((MethodDefinitionHandle)handle).GetDeclaringType(),
-            HandleKind.FieldDefinition => metadata.GetFieldDefinition((FieldDefinitionHandle)handle).GetDeclaringType(),
-            HandleKind.PropertyDefinition => metadata.GetPropertyDefinition((PropertyDefinitionHandle)handle).GetAccessors() is var a && !a.Getter.IsNil ? metadata.GetMethodDefinition(a.Getter).GetDeclaringType() : FindPropertyDeclaringType((PropertyDefinitionHandle)handle),
-            HandleKind.EventDefinition => metadata.GetEventDefinition((EventDefinitionHandle)handle).GetAccessors() is var e && !e.Adder.IsNil ? metadata.GetMethodDefinition(e.Adder).GetDeclaringType() : FindEventDeclaringType((EventDefinitionHandle)handle),
-            _ => default
-        };
+        var typeHandle = DeclaringTypeOf(handle);
         if (typeHandle.IsNil) return [Descriptor.RootNode];
         var chain = new Stack<TypeDefinitionHandle>();
         for (var current = typeHandle; !current.IsNil; current = metadata.GetTypeDefinition(current).GetDeclaringType()) chain.Push(current);

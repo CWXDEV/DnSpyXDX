@@ -43,11 +43,12 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
             {
                 var document = await backend.DecompileAsync(saved.Symbol, cancellationToken);
                 var assembly = backend.Assemblies.First(a => a.ModuleMvid == saved.Symbol.ModuleMvid);
-                workspace.Open(document, assembly.Name);
+                workspace.Open(document, assembly.Name, newTab: true);
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { }
         }
-        if (snapshot.ActiveKey is { } active && workspace.Tabs.Any(t => t.Key == active)) workspace.Activate(active);
+        // Tab ids are generated per run, so the active tab is restored by position.
+        if (workspace.Tabs.ElementAtOrDefault(snapshot.ActiveIndex) is { } active) workspace.Activate(active.Id);
     }
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
@@ -58,7 +59,7 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
             var snapshot = new SessionSnapshot(
                 backend.Assemblies.Select(a => a.Path).ToArray(),
                 workspace.Tabs.Select(t => new SavedDocument(t.Document.Symbol)).ToArray(),
-                workspace.ActiveKey,
+                workspace.Tabs.ToList().FindIndex(t => t.Id == workspace.ActiveTabId),
                 UiState);
             var directory = Path.GetDirectoryName(SessionPath)!;
             Directory.CreateDirectory(directory);
@@ -70,6 +71,6 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
     }
 
     private static StringComparer PathComparer() => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-    private sealed record SessionSnapshot(string[] AssemblyPaths, SavedDocument[] Documents, string? ActiveKey, UiSessionState? UiState = null);
+    private sealed record SessionSnapshot(string[] AssemblyPaths, SavedDocument[] Documents, int ActiveIndex, UiSessionState? UiState = null);
     private sealed record SavedDocument(SymbolId Symbol);
 }

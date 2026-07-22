@@ -44,9 +44,13 @@ public sealed record DecompilerDocument(
     string Language,
     string Text,
     IReadOnlyList<ReferenceSpan> References,
-    IReadOnlyList<DiagnosticMessage> Diagnostics);
+    IReadOnlyList<DiagnosticMessage> Diagnostics,
+    IReadOnlyDictionary<string, SymbolId?>? SymbolLinks = null);
 
 public sealed record SearchResult(SymbolId Symbol, string Name, string Kind, string AssemblyName, string Namespace);
+
+/// <summary>A request to show a symbol; <paramref name="NewTab"/> mirrors dnSpy's Ctrl+click.</summary>
+public readonly record struct NavigationRequest(SymbolId Symbol, bool NewTab);
 
 public sealed record ExportRequest(IReadOnlyList<Guid> SessionIds, string Destination, bool ValidateBuild = false);
 public sealed record ExportProgress(int Completed, int Total, string Message);
