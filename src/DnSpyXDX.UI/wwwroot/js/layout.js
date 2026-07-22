@@ -229,7 +229,7 @@ window.dnSpyXdx.disposeBlockStructure = function (source) {
   source.querySelector(":scope > .block-structure-layer")?.remove();
 };
 window.dnSpyXdx.scrollTreeNodeIntoView = function (row) {
-  if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
 };
 window.dnSpyXdx.initSourceFind = function (source, dotNet) {
   window.dnSpyXdx.sourceFindTarget = { source, dotNet };

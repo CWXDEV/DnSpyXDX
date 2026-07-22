@@ -36,12 +36,17 @@ public sealed class WorkspaceState
         Changed?.Invoke();
     }
 
-    public string OpenLoading(SymbolId symbol, string title, string assemblyName)
+    public string OpenLoading(SymbolId symbol, string title, string assemblyName, bool newTab = false)
     {
         var placeholder = new DecompilerDocument(symbol, title, "csharp", "", [], []);
-        var tab = new DocumentTab(Guid.NewGuid().ToString("N"), placeholder, assemblyName, isLoading: true);
-        tabs.Add(tab);
-        ActiveTabId = tab.Id;
+        var tab = ActiveTab;
+        if (newTab || tab is null)
+        {
+            tab = new DocumentTab(Guid.NewGuid().ToString("N"), placeholder, assemblyName, isLoading: true);
+            tabs.Add(tab);
+            ActiveTabId = tab.Id;
+        }
+        else tab.NavigateToLoading(placeholder, assemblyName);
         Status = $"Decompiling {title}…";
         Changed?.Invoke();
         return tab.Id;
@@ -130,10 +135,21 @@ public sealed class DocumentTab(string id, DecompilerDocument document, string a
 
     internal void NavigateTo(DecompilerDocument next, string nextAssemblyName)
     {
-        if (next.Symbol == Document.Symbol) return;
-        back.Add((Document, AssemblyName));
+        if (next.Symbol == Document.Symbol && !IsLoading && Error is null) return;
+        if (!IsLoading && Error is null) back.Add((Document, AssemblyName));
         forward.Clear();
         (Document, AssemblyName) = (next, nextAssemblyName);
+        IsLoading = false;
+        Error = null;
+    }
+
+    internal void NavigateToLoading(DecompilerDocument next, string nextAssemblyName)
+    {
+        if (!IsLoading && Error is null && next.Symbol != Document.Symbol) back.Add((Document, AssemblyName));
+        forward.Clear();
+        (Document, AssemblyName) = (next, nextAssemblyName);
+        IsLoading = true;
+        Error = null;
     }
 
     internal void CompleteLoading(DecompilerDocument document)

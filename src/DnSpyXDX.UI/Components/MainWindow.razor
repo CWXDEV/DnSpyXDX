@@ -47,7 +47,7 @@
         </header>
         <div class="explorer-tree">
           @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
-          @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" Tooltip="@($"Loaded from: {Path.GetDirectoryName(assembly.Path)}")" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" OnContextMenu="e => OpenAssemblyContextMenu(e, assembly)" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" CollapseVersion="treeCollapseVersion" /> }
+          @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" Tooltip="@($"Loaded from: {Path.GetDirectoryName(assembly.Path)}")" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" OnContextMenu="e => OpenAssemblyContextMenu(e, assembly)" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" SelectedNode="selectedNode" SelectionVersion="treeSelectionVersion" CollapseVersion="treeCollapseVersion" /> }
         </div>
       </aside>
       <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
@@ -97,6 +97,7 @@
   private ElementReference searchPanel;
   private IReadOnlySet<NodeId> revealedPath = new HashSet<NodeId>();
   private SymbolId? selectedSymbol;
+  private NodeId? selectedNode;
   private Guid? SelectedAssemblyMvid => selectedSymbol?.ModuleMvid ?? Workspace.ActiveTab?.Document.Symbol.ModuleMvid;
   private CancellationTokenSource? saveDelay;
   private CancellationTokenSource? searchDelay;
@@ -112,6 +113,7 @@
   private double explorerWidth = 300;
   private double searchPanelHeight = 230;
   private int treeCollapseVersion;
+  private int treeSelectionVersion;
   private const int MinimumZoom = 50;
   private const int MaximumZoom = 200;
   private const int ZoomStep = 10;
@@ -159,7 +161,7 @@
   private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
   private void ToggleSearchPanel() { if (searchOpen) CloseSearch(); else OpenSearchPanel(); }
-  private async Task UnloadAllAsync() { menuOpen = false; CancelAllDecompilations(); Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
+  private async Task UnloadAllAsync() { menuOpen = false; CancelAllDecompilations(); Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; selectedNode = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
   private void OpenAssemblyContextMenu(MouseEventArgs e, AssemblyDescriptor assembly)
   {
     menuOpen = false;
@@ -180,6 +182,7 @@
     await Backend.CloseAsync(assembly.SessionId);
     Workspace.CloseAssembly(assembly.ModuleMvid);
     results = results.Where(result => result.Symbol.ModuleMvid != assembly.ModuleMvid).ToArray();
+    if (selectedNode?.SessionId == assembly.SessionId) selectedNode = null;
     if (selectedSymbol?.ModuleMvid == assembly.ModuleMvid)
     {
       selectedSymbol = Workspace.ActiveTab?.Document.Symbol;
@@ -190,10 +193,12 @@
   private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false, string? displayName = null, bool isType = false)
   {
     selectedSymbol = symbol;
+    selectedNode = null;
     var assemblyName = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly";
+    if (!newTab && Workspace.ActiveTab is { IsLoading: true } loadingTab) CancelDecompilation(loadingTab.Id);
     if (isType || IsTypeSymbol(symbol))
     {
-      var tabId = Workspace.OpenLoading(symbol, displayName ?? "Type", assemblyName);
+      var tabId = Workspace.OpenLoading(symbol, displayName ?? "Type", assemblyName, newTab);
       var cancellation = new CancellationTokenSource();
       decompilations[tabId] = cancellation;
       _ = DecompileTypeIntoTabAsync(tabId, symbol, cancellation);
@@ -204,7 +209,7 @@
     catch (Exception ex) { Workspace.SetBusy(false, ex.Message); }
   }
   private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0, request.DisplayName, request.Kind == TreeNodeKind.Type);
-  private async Task OpenReferenceAsync(NodeId reference) { Workspace.SetBusy(true, "Loading reference…"); try { var assembly = await Backend.OpenReferenceAsync(reference); revealedPath = new HashSet<NodeId> { assembly.RootNode }; selectedSymbol = null; Workspace.SetBusy(false, $"Opened {assembly.Name}"); StateHasChanged(); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
+  private async Task OpenReferenceAsync(NodeId reference) { Workspace.SetBusy(true, "Loading reference…"); try { var assembly = await Backend.OpenReferenceAsync(reference); revealedPath = new HashSet<NodeId> { assembly.RootNode }; selectedSymbol = null; selectedNode = assembly.RootNode; treeSelectionVersion++; Workspace.SetBusy(false, $"Opened {assembly.Name}"); StateHasChanged(); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab || Workspace.Tabs.Count == 0, result.Name, result.Kind == "Type"); StateHasChanged(); }
   private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab, request.DisplayName, request.Kind == TreeNodeKind.Type); StateHasChanged(); }
   private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) CloseTab(id); }
@@ -216,11 +221,26 @@
     {
       var document = await Backend.DecompileAsync(symbol, token);
       token.ThrowIfCancellationRequested();
-      await InvokeAsync(() => { Workspace.CompleteLoading(tabId, document); Workspace.SetBusy(false, $"Decompiled {document.Title}"); });
+      await InvokeAsync(() =>
+      {
+        if (!IsCurrentDecompilation(tabId, cancellation)) return;
+        Workspace.CompleteLoading(tabId, document);
+        Workspace.SetBusy(false, $"Decompiled {document.Title}");
+      });
     }
     catch (OperationCanceledException) { }
-    catch (Exception ex) { await InvokeAsync(() => { Workspace.FailLoading(tabId, ex.Message); Workspace.SetBusy(false, ex.Message); }); }
-    finally { if (decompilations.Remove(tabId, out var current)) current.Dispose(); }
+    catch (Exception ex) { await InvokeAsync(() => { if (IsCurrentDecompilation(tabId, cancellation)) { Workspace.FailLoading(tabId, ex.Message); Workspace.SetBusy(false, ex.Message); } }); }
+    finally
+    {
+      if (IsCurrentDecompilation(tabId, cancellation)) decompilations.Remove(tabId);
+      cancellation.Dispose();
+    }
+  }
+  private bool IsCurrentDecompilation(string tabId, CancellationTokenSource cancellation) => decompilations.TryGetValue(tabId, out var current) && ReferenceEquals(current, cancellation);
+  private void CancelDecompilation(string tabId)
+  {
+    if (!decompilations.Remove(tabId, out var cancellation)) return;
+    cancellation.Cancel();
   }
   private void CloseTab(string id)
   {

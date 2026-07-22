@@ -126,6 +126,27 @@ public sealed class WorkspaceStateTests
     }
 
     [Fact]
+    public void Loading_navigation_reuses_the_active_tab_unless_a_new_tab_is_requested()
+    {
+        var workspace = new WorkspaceState();
+        workspace.Open(Document(1), "Sample");
+        var originalTab = workspace.ActiveTabId;
+
+        var reusedTab = workspace.OpenLoading(Document(2).Symbol, "Type2", "Sample");
+
+        Assert.Equal(originalTab, reusedTab);
+        Assert.Single(workspace.Tabs);
+        Assert.True(workspace.ActiveTab!.IsLoading);
+        Assert.True(workspace.ActiveTab.CanGoBack);
+
+        var newTab = workspace.OpenLoading(Document(3).Symbol, "Type3", "Sample", newTab: true);
+
+        Assert.NotEqual(reusedTab, newTab);
+        Assert.Equal(2, workspace.Tabs.Count);
+        Assert.Equal(newTab, workspace.ActiveTabId);
+    }
+
+    [Fact]
     public void Closing_an_assembly_removes_its_tabs_and_history_only()
     {
         var workspace = new WorkspaceState();
