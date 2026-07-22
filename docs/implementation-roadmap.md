@@ -29,14 +29,15 @@ Build these tickets in order. Checked items are supported by concrete production
 4. [x] Implement `AssemblySession` with `PEFile` and `UniversalAssemblyResolver`.
 5. [x] Show assembly details, references, resources, namespaces, and types lazily.
 6. [x] Decompile a selected type into a plain read-only source view.
-7. [ ] Add a large-document source pipeline: cache presentation output, tokenize incrementally off the UI thread, render only visible lines, load nearby line ranges on scroll, and cancel pending presentation work when its tab closes. Unrelated UI changes must not re-tokenize an unchanged document, and closing a very large document must remain responsive.
-8. [ ] Integrate Monaco (or confirm another virtualized editor) and preserve model/view state per tab.
-9. [x] Add member nodes and member-level decompilation.
-10. [ ] **Partial:** Add cancellation, progress, error documents, and an LRU cache. Loading feedback, cancellation, error tabs, and caching exist; the cache has no eviction or memory bound.
-11. [x] Implement history and symbol identity.
-12. [ ] **Partial:** Add semantic reference spans and editor navigation. Navigation exists, but current links are derived from identifier names rather than precise decompiler reference spans.
-13. [x] Add workspace-wide type/member name search with filtering and debounced UI updates.
-14. [x] Export one assembly with `WholeProjectDecompiler`.
-15. [ ] **Partial:** Add `SlnxWriter`, multi-project export, and project-reference mapping. Solution and multi-project output exist; project-reference remapping does not.
-16. [x] Add optional `dotnet build` validation and a persistent export report.
-17. [ ] Add Windows/Linux publishing automation and GUI smoke tests.
+7. [ ] Add a dnSpy-style main-panel language selector with **C#**, **IL**, and **IL with C#** modes. C# remains the default; IL uses the metadata disassembler; IL with C# annotates IL ranges with the higher-level C# statements that produced them instead of merely concatenating two documents. Changing mode must refresh the active document in place, preserve navigation and selection, persist across sessions, support cancellation, and key the document cache by both symbol and language.
+8. [ ] Add a large-document source pipeline: cache presentation output, tokenize incrementally off the UI thread, render only visible lines, load nearby line ranges on scroll, and cancel pending presentation work when its tab closes. Unrelated UI changes must not re-tokenize an unchanged document, and closing a very large document must remain responsive.
+9. [ ] Integrate Monaco (or confirm another virtualized editor) and preserve model/view state per tab.
+10. [x] Add member nodes and member-level decompilation.
+11. [ ] **Partial:** Add cancellation, progress, error documents, and an LRU cache. Loading feedback, cancellation, error tabs, and caching exist; the cache has no eviction or memory bound.
+12. [x] Implement history and symbol identity.
+13. [ ] **Partial:** Add semantic reference spans and editor navigation. Navigation exists, but current links are derived from identifier names rather than precise decompiler reference spans.
+14. [x] Add workspace-wide type/member name search with filtering and debounced UI updates.
+15. [x] Export one assembly with `WholeProjectDecompiler`.
+16. [ ] **Partial:** Add `SlnxWriter`, multi-project export, and project-reference mapping. Solution and multi-project output exist; project-reference remapping does not.
+17. [x] Add optional `dotnet build` validation and a persistent export report.
+18. [ ] Add Windows/Linux publishing automation and GUI smoke tests.
