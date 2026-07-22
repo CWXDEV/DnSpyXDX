@@ -190,13 +190,14 @@ internal sealed class AssemblySession : IDisposable
     private IReadOnlyList<TreeNodeDescriptor> TypeChildren(TypeDefinitionHandle handle, CancellationToken ct)
     {
         var t = metadata.GetTypeDefinition(handle);
+        var genericContext = typeNames.CreateContext(t);
         var nodes = new List<TreeNodeDescriptor>();
         // dnSpy hangs property and event accessors off their owning node rather than listing them
         // beside real methods; without this the method list is mostly get_/set_/add_/remove_ noise.
         var accessors = PropertyAndEventMethods(t);
-        foreach (var h in t.GetFields()) { ct.ThrowIfCancellationRequested(); var x = metadata.GetFieldDefinition(h); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Field, MemberVisibility(x.Attributes), x.DecodeSignature(typeNames, null))); }
-        foreach (var h in t.GetProperties()) { var x = metadata.GetPropertyDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Property, AccessorVisibility(access.Getter, access.Setter), x.DecodeSignature(typeNames, null).ReturnType, HasAny(access.Getter, access.Setter))); }
-        foreach (var h in t.GetEvents()) { var x = metadata.GetEventDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Event, AccessorVisibility(access.Adder, access.Remover), typeNames.GetTypeName(x.Type), HasAny(access.Adder, access.Remover, access.Raiser))); }
+        foreach (var h in t.GetFields()) { ct.ThrowIfCancellationRequested(); var x = metadata.GetFieldDefinition(h); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Field, MemberVisibility(x.Attributes), x.DecodeSignature(typeNames, genericContext))); }
+        foreach (var h in t.GetProperties()) { var x = metadata.GetPropertyDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Property, AccessorVisibility(access.Getter, access.Setter), x.DecodeSignature(typeNames, genericContext).ReturnType, HasAny(access.Getter, access.Setter))); }
+        foreach (var h in t.GetEvents()) { var x = metadata.GetEventDefinition(h); var access = x.GetAccessors(); nodes.Add(MemberNode(h, metadata.GetString(x.Name), TreeNodeKind.Event, AccessorVisibility(access.Adder, access.Remover), typeNames.GetTypeName(x.Type, genericContext), HasAny(access.Adder, access.Remover, access.Raiser))); }
         foreach (var h in t.GetMethods()) { ct.ThrowIfCancellationRequested(); if (!accessors.Contains(h)) nodes.Add(MethodNode(h, t)); }
         nodes.AddRange(t.GetNestedTypes().Select(TypeNode));
         return nodes.OrderBy(n => MemberRank(n.Kind)).ThenBy(n => n.Name).ToArray();
@@ -211,7 +212,7 @@ internal sealed class AssemblySession : IDisposable
             isConstructor ? TypeDisplayName(declaringType) : name,
             isConstructor ? TreeNodeKind.Constructor : TreeNodeKind.Method,
             MemberVisibility(x.Attributes),
-            isConstructor ? null : x.DecodeSignature(typeNames, null).ReturnType);
+            isConstructor ? null : x.DecodeSignature(typeNames, typeNames.CreateContext(declaringType, x)).ReturnType);
     }
 
     private HashSet<MethodDefinitionHandle> PropertyAndEventMethods(TypeDefinition type)
@@ -579,12 +580,14 @@ internal sealed class AssemblySession : IDisposable
 
 internal sealed class MetadataTypeNameProvider(MetadataReader metadata) : ISignatureTypeProvider<string, object?>
 {
+    private sealed record GenericContext(ImmutableArray<string> TypeParameters, ImmutableArray<string> MethodParameters);
+
     public string GetArrayType(string elementType, ArrayShape shape) => elementType + "[" + new string(',', shape.Rank - 1) + "]";
     public string GetByReferenceType(string elementType) => "ref " + elementType;
     public string GetFunctionPointerType(MethodSignature<string> signature) => "delegate*";
     public string GetGenericInstantiation(string genericType, ImmutableArray<string> typeArguments) => genericType.Split('`')[0] + "<" + string.Join(", ", typeArguments) + ">";
-    public string GetGenericMethodParameter(object? genericContext, int index) => $"!!{index}";
-    public string GetGenericTypeParameter(object? genericContext, int index) => $"!{index}";
+    public string GetGenericMethodParameter(object? genericContext, int index) => genericContext is GenericContext context && index >= 0 && index < context.MethodParameters.Length ? context.MethodParameters[index] : $"!!{index}";
+    public string GetGenericTypeParameter(object? genericContext, int index) => genericContext is GenericContext context && index >= 0 && index < context.TypeParameters.Length ? context.TypeParameters[index] : $"!{index}";
     public string GetModifiedType(string modifier, string unmodifiedType, bool isRequired) => unmodifiedType;
     public string GetPinnedType(string elementType) => elementType;
     public string GetPointerType(string elementType) => elementType + "*";
@@ -593,5 +596,23 @@ internal sealed class MetadataTypeNameProvider(MetadataReader metadata) : ISigna
     public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => reader.GetString(reader.GetTypeDefinition(handle).Name);
     public string GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => reader.GetString(reader.GetTypeReference(handle).Name);
     public string GetTypeFromSpecification(MetadataReader reader, object? genericContext, TypeSpecificationHandle handle, byte rawTypeKind) => reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
-    public string GetTypeName(EntityHandle handle) => handle.Kind switch { HandleKind.TypeDefinition => GetTypeFromDefinition(metadata, (TypeDefinitionHandle)handle, 0), HandleKind.TypeReference => GetTypeFromReference(metadata, (TypeReferenceHandle)handle, 0), HandleKind.TypeSpecification => GetTypeFromSpecification(metadata, null, (TypeSpecificationHandle)handle, 0), _ => "object" };
+    public string GetTypeName(EntityHandle handle, object? genericContext = null) => handle.Kind switch { HandleKind.TypeDefinition => GetTypeFromDefinition(metadata, (TypeDefinitionHandle)handle, 0), HandleKind.TypeReference => GetTypeFromReference(metadata, (TypeReferenceHandle)handle, 0), HandleKind.TypeSpecification => GetTypeFromSpecification(metadata, genericContext, (TypeSpecificationHandle)handle, 0), _ => "object" };
+
+    public object CreateContext(TypeDefinition type, MethodDefinition? method = null) => new GenericContext(
+        ParameterNames(type.GetGenericParameters(), "!"),
+        method is { } definition ? ParameterNames(definition.GetGenericParameters(), "!!") : []);
+
+    private ImmutableArray<string> ParameterNames(GenericParameterHandleCollection handles, string fallbackPrefix)
+    {
+        if (handles.Count == 0) return [];
+        var parameters = handles.Select(handle => metadata.GetGenericParameter(handle)).ToArray();
+        var names = new string[parameters.Max(parameter => parameter.Index) + 1];
+        foreach (var parameter in parameters)
+        {
+            var name = metadata.GetString(parameter.Name);
+            names[parameter.Index] = string.IsNullOrEmpty(name) ? $"{fallbackPrefix}{parameter.Index}" : name;
+        }
+        for (var index = 0; index < names.Length; index++) names[index] ??= $"{fallbackPrefix}{index}";
+        return [.. names];
+    }
 }

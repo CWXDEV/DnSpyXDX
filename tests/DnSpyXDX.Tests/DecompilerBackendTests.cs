@@ -111,11 +111,16 @@ public sealed class DecompilerBackendTests
         var ownNamespace = (await backend.GetChildrenAsync(namespaces.Id)).Single(n => n.Name == "DnSpyXDX.Tests");
 
         var genericType = (await backend.GetChildrenAsync(ownNamespace.Id)).Single(n => n.Name == "GenericSample<TItem>");
-        var constructor = (await backend.GetChildrenAsync(genericType.Id)).Single(n => n.Kind == TreeNodeKind.Constructor);
+        var members = await backend.GetChildrenAsync(genericType.Id);
+        var constructor = members.Single(n => n.Kind == TreeNodeKind.Constructor);
         var searchResult = Assert.Single(await backend.SearchAsync("GenericSample"), result => result.Kind == "Type");
         var document = await backend.DecompileAsync(genericType.Symbol!.Value);
 
         Assert.Equal("GenericSample<TItem>", constructor.Name);
+        Assert.Equal("TItem", members.Single(n => n.Name == nameof(GenericSample<object>.Item)).TypeDisplay);
+        Assert.Equal("TItem", members.Single(n => n.Name == nameof(GenericSample<object>.Field)).TypeDisplay);
+        Assert.Equal("Action<TItem>", members.Single(n => n.Kind == TreeNodeKind.Event && n.Name == nameof(GenericSample<object>.Changed)).TypeDisplay);
+        Assert.Equal("TResult", members.Single(n => n.Name == nameof(GenericSample<object>.Convert)).TypeDisplay);
         Assert.Equal("GenericSample<TItem>", searchResult.Name);
         Assert.Equal("GenericSample<TItem>", document.Title);
     }
@@ -187,5 +192,11 @@ public sealed class SampleMembers
     public sealed class SampleNested { }
 }
 
-public sealed class GenericSample<TItem> { }
+public sealed class GenericSample<TItem>
+{
+    public TItem? Item { get; set; }
+    public TItem? Field;
+    public event Action<TItem>? Changed;
+    public TResult? Convert<TResult>() => default;
+}
 #pragma warning restore CS0067, CS0649
