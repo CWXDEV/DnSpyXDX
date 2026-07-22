@@ -125,3 +125,52 @@ window.dnSpyXdx.scrollSourceToTop = function (source) {
 window.dnSpyXdx.scrollTreeNodeIntoView = function (row) {
   if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 };
+window.dnSpyXdx.initSourceFind = function (source, dotNet) {
+  window.dnSpyXdx.sourceFindTarget = { source, dotNet };
+  if (window.dnSpyXdx.sourceFindReady) return;
+  window.dnSpyXdx.sourceFindReady = true;
+  window.addEventListener("keydown", event => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "f") return;
+    const target = window.dnSpyXdx.sourceFindTarget;
+    if (!target) return;
+    event.preventDefault();
+    target.dotNet.invokeMethodAsync("OpenFind");
+  });
+};
+window.dnSpyXdx.disposeSourceFind = function (source) {
+  if (window.dnSpyXdx.sourceFindTarget?.source === source) window.dnSpyXdx.sourceFindTarget = null;
+  window.dnSpyXdx.clearSourceFind();
+};
+window.dnSpyXdx.clearSourceFind = function () {
+  if (!CSS.highlights) return;
+  CSS.highlights.delete("source-find-results");
+  CSS.highlights.delete("source-find-active");
+};
+window.dnSpyXdx.findInSource = function (source, query, requestedIndex) {
+  window.dnSpyXdx.clearSourceFind();
+  if (!source || !query) return { count: 0, index: -1 };
+  const ranges = [];
+  const needle = query.toLocaleLowerCase();
+  const walker = document.createTreeWalker(source, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const text = node.nodeValue.toLocaleLowerCase();
+    let start = text.indexOf(needle);
+    while (start >= 0) {
+      const range = new Range();
+      range.setStart(node, start);
+      range.setEnd(node, start + query.length);
+      ranges.push(range);
+      start = text.indexOf(needle, start + Math.max(1, query.length));
+    }
+  }
+  if (ranges.length === 0) return { count: 0, index: -1 };
+  const index = ((requestedIndex % ranges.length) + ranges.length) % ranges.length;
+  if (CSS.highlights) {
+    CSS.highlights.set("source-find-results", new Highlight(...ranges));
+    CSS.highlights.set("source-find-active", new Highlight(ranges[index]));
+  }
+  const match = ranges[index].startContainer.parentElement;
+  if (match) match.scrollIntoView({ block: "center", inline: "nearest" });
+  return { count: ranges.length, index };
+};

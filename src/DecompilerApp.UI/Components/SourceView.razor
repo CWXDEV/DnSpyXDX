@@ -1,7 +1,17 @@
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 
 <div class="source-header"><span>C#</span><span>@Document.Title</span></div>
+@if (findOpen)
+{
+  <div class="source-find" role="search">
+    <input @ref="findInput" @bind="findQuery" @bind:event="oninput" @bind:after="FindChangedAsync" @onkeydown="FindKeyAsync" placeholder="Find in document" aria-label="Find in document" />
+    <span class="source-find-count">@(matchCount == 0 ? "No results" : $"{matchIndex + 1} of {matchCount}")</span>
+    <button title="Previous match (Shift+Enter)" aria-label="Previous match" disabled="@(matchCount == 0)" @onclick="FindPreviousAsync">↑</button>
+    <button title="Next match (Enter)" aria-label="Next match" disabled="@(matchCount == 0)" @onclick="FindNextAsync">↓</button>
+    <button title="Close (Escape)" aria-label="Close find" @onclick="CloseFindAsync">×</button>
+  </div>
+}
 <pre class="source" @ref="source"><code>@((MarkupString)CodeHighlighter.Highlight(Document.Text, Document.SymbolLinks))</code></pre>
 
 @code {
@@ -10,6 +20,12 @@
   private ElementReference source;
   private DotNetObjectReference<SourceView>? selfReference;
   private SymbolId? renderedSymbol;
+  private ElementReference findInput;
+  private string findQuery = "";
+  private int matchCount;
+  private int matchIndex = -1;
+  private bool findOpen;
+  private bool focusFind;
 
   protected override async Task OnAfterRenderAsync(bool firstRender)
   {
@@ -17,6 +33,7 @@
     {
       selfReference = DotNetObjectReference.Create(this);
       await JS.InvokeVoidAsync("dnSpyXdx.initSourceLinks", source, selfReference);
+      await JS.InvokeVoidAsync("dnSpyXdx.initSourceFind", source, selfReference);
     }
     // The pre element is reused across documents, so its scroll offset has to be reset by hand
     // when a different symbol is shown.
@@ -24,11 +41,58 @@
     {
       renderedSymbol = Document.Symbol;
       await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToTop", source);
+      if (findOpen) await FindChangedAsync();
     }
+    if (focusFind) { focusFind = false; await findInput.FocusAsync(); }
   }
 
   [JSInvokable]
   public Task NavigateToToken(int token, bool newTab) => OnNavigate.InvokeAsync(new NavigationRequest(new SymbolId(Document.Symbol.ModuleMvid, token), newTab));
 
-  public void Dispose() => selfReference?.Dispose();
+  [JSInvokable]
+  public void OpenFind()
+  {
+    findOpen = true;
+    focusFind = true;
+    StateHasChanged();
+  }
+
+  private async Task FindChangedAsync()
+  {
+    var result = await JS.InvokeAsync<SourceFindResult>("dnSpyXdx.findInSource", source, findQuery, 0);
+    (matchCount, matchIndex) = (result.Count, result.Index);
+    StateHasChanged();
+  }
+
+  private Task FindNextAsync() => MoveFindAsync(1);
+  private Task FindPreviousAsync() => MoveFindAsync(-1);
+  private async Task MoveFindAsync(int direction)
+  {
+    var result = await JS.InvokeAsync<SourceFindResult>("dnSpyXdx.findInSource", source, findQuery, matchIndex + direction);
+    (matchCount, matchIndex) = (result.Count, result.Index);
+  }
+
+  private async Task FindKeyAsync(KeyboardEventArgs e)
+  {
+    if (e.Key == "Enter") await MoveFindAsync(e.ShiftKey ? -1 : 1);
+    else if (e.Key == "Escape") await CloseFindAsync();
+  }
+
+  private async Task CloseFindAsync()
+  {
+    findOpen = false;
+    findQuery = "";
+    matchCount = 0;
+    matchIndex = -1;
+    await JS.InvokeVoidAsync("dnSpyXdx.clearSourceFind");
+  }
+
+  public async ValueTask DisposeAsync()
+  {
+    try { await JS.InvokeVoidAsync("dnSpyXdx.disposeSourceFind", source); }
+    catch (JSDisconnectedException) { }
+    selfReference?.Dispose();
+  }
+
+  private sealed record SourceFindResult(int Count, int Index);
 }
