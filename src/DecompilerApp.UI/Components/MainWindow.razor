@@ -17,11 +17,16 @@
           <button @onclick="OpenFromMenuAsync" disabled="@Workspace.IsBusy"><span>Open assembly</span></button>
           <button @onclick="ExportFromMenuAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Export all</span></button>
           <button @onclick="UnloadAllAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Unload all assemblies</span></button>
-          <div class="menu-separator"></div>
-          <button @onclick="OpenSearchPanel" disabled="@(Backend.Assemblies.Count == 0)"><span>Search</span></button>
         </div>
       }
     </div>
+    <div class="toolbar-navigation" aria-label="Document navigation">
+      <button class="toolbar-icon" title="Back (Alt+Left)" aria-label="Back" disabled="@(Workspace.ActiveTab?.CanGoBack != true)" @onclick="() => NavigateHistory(false)">←</button>
+      <button class="toolbar-icon" title="Forward (Alt+Right)" aria-label="Forward" disabled="@(Workspace.ActiveTab?.CanGoForward != true)" @onclick="() => NavigateHistory(true)">→</button>
+    </div>
+    <button class="toolbar-icon search-toolbar-button @(searchOpen ? "active" : null)" title="@(searchOpen ? "Close search" : "Open search")" aria-label="@(searchOpen ? "Close search" : "Open search")" aria-pressed="@searchOpen" disabled="@(Backend.Assemblies.Count == 0)" @onclick="ToggleSearchPanel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.5 15.5 5 5"></path></svg>
+    </button>
   </header>
   <main>
     <div class="explorer-pane" @ref="explorer" style="width:@($"{explorerWidth}px")">
@@ -113,6 +118,7 @@
   private async Task OpenFromMenuAsync() { menuOpen = false; await OpenAsync(); }
   private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
+  private void ToggleSearchPanel() { if (searchOpen) CloseSearch(); else OpenSearchPanel(); }
   private async Task UnloadAllAsync() { menuOpen = false; Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
   private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false) { selectedSymbol = symbol; Workspace.SetBusy(true, "Decompiling…"); try { var doc = await Backend.DecompileAsync(symbol); var name = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly"; Workspace.Open(doc, name, newTab); Workspace.SetBusy(false, $"Decompiled {doc.Title}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0);

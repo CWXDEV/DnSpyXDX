@@ -71,6 +71,7 @@
 .app-menu{position:relative}
 .hamburger{position:relative;z-index:102;width:31px;height:29px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0!important;background:transparent!important;border-color:transparent!important}
 .hamburger:hover{background:#252d3c!important;border-color:#354157!important}.hamburger span{display:block;width:15px;height:1.5px;background:#c8d2e2;border-radius:2px}
+.toolbar-navigation{display:flex;align-items:center;gap:2px;margin-left:3px}.toolbar-icon{width:31px;height:29px;display:grid;place-items:center;padding:0!important;border-color:transparent!important;background:transparent!important;color:#c8d2e2!important;font-size:18px;line-height:1}.toolbar-icon:hover:not(:disabled),.toolbar-icon.active{background:#252d3c!important;border-color:#354157!important}.toolbar-icon:disabled{opacity:.32;cursor:default}.toolbar-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}.search-toolbar-button{margin-left:3px}
 .menu-dismiss{position:fixed;inset:0;z-index:99;background:transparent}
 .menu-popup{position:absolute;top:34px;left:0;width:230px;padding:5px;background:#171d28;border:1px solid #354055;border-radius:6px;box-shadow:0 12px 30px #0009;z-index:100}
 .menu-identity{height:39px;display:flex;align-items:center;gap:9px;padding:2px 9px 7px;margin-bottom:3px;border-bottom:1px solid #30394a;color:#e2e8f2;font-weight:650}.menu-identity img{width:27px;height:27px;image-rendering:auto}
