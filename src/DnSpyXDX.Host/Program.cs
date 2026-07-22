@@ -14,7 +14,12 @@ internal static class Program
     private static void Main(string[] args)
     {
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
-        builder.Services.AddLogging(logging => logging.AddConsole());
+        builder.Services.AddLogging(logging =>
+        {
+            logging.ClearProviders();
+            logging.AddConsole();
+            logging.AddFilter((category, _) => category?.StartsWith("DnSpyXDX", StringComparison.Ordinal) == true);
+        });
         builder.Services.AddSingleton<IDecompilerBackend, DecompilerBackend>();
         builder.Services.AddSingleton<IProjectExportService, ProjectExportService>();
         builder.Services.AddSingleton<WorkspaceState>();
@@ -22,7 +27,7 @@ internal static class Program
         builder.Services.AddSingleton<IWorkspaceSessionService, WorkspaceSessionService>();
         builder.RootComponents.Add<App>("app");
         var app = builder.Build();
-        app.MainWindow.SetTitle("DnSpyXDX").SetIconFile(Path.Combine(AppContext.BaseDirectory, "wwwroot", "dnspyxdx.png")).SetSize(1320, 840).SetMinSize(860, 560).SetUseOsDefaultSize(false);
+        app.MainWindow.SetLogVerbosity(0).SetTitle("DnSpyXDX").SetIconFile(Path.Combine(AppContext.BaseDirectory, "wwwroot", "dnspyxdx.png")).SetSize(1320, 840).SetMinSize(860, 560).SetUseOsDefaultSize(false);
         WindowStateManager.Attach(app.MainWindow);
         app.Run();
     }

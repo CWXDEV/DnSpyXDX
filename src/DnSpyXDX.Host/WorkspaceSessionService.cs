@@ -53,7 +53,7 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
         {
             var snapshot = new SessionSnapshot(
                 backend.Assemblies.Select(a => a.Path).ToArray(),
-                workspace.Tabs.Select(t => new SavedDocument(t.Document.Symbol)).ToArray(),
+                workspace.Tabs.Where(t => !t.IsLoading && t.Error is null).Select(t => new SavedDocument(t.Document.Symbol)).ToArray(),
                 workspace.Tabs.ToList().FindIndex(t => t.Id == workspace.ActiveTabId),
                 UiState);
             var directory = Path.GetDirectoryName(SessionPath)!;

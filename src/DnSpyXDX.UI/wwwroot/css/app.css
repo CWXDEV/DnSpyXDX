@@ -37,6 +37,7 @@
 .document-content{position:relative;min-width:0;min-height:0;overflow:hidden}
 .document-content>.source{height:calc(100% - 32px)}
 .document-content>.welcome{height:100%}
+.decompiling-panel{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#d7dfed}.decompiling-panel small{color:#7f8ca4}.decompiling-panel.error strong{color:#ef8f8f}.decompiling-spinner{width:28px;height:28px;border:3px solid #354157;border-top-color:#7c72ff;border-radius:50%;animation:decompiling-spin .8s linear infinite}@keyframes decompiling-spin{to{transform:rotate(360deg)}}
 .search-panel{position:relative;height:230px;min-height:120px;max-height:65vh;overflow:hidden;display:grid;grid-template-rows:34px 1fr;background:#11161f;border-top:2px solid #39445a}
 .search-resizer{position:absolute;left:0;right:0;top:-6px;height:11px;cursor:row-resize;z-index:25;touch-action:none}
 .search-resizer:hover,.resizing-search .search-resizer{background:#7968ff55}.resizing-search{cursor:row-resize;user-select:none}

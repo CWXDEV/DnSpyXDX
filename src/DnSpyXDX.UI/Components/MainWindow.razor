@@ -39,10 +39,12 @@
     </div>
     <section class="document-area">
       <nav class="tabs">
-        @foreach (var tab in Workspace.Tabs) { <button class="tab @(Workspace.ActiveTabId == tab.Id ? "active" : null)" @onclick="() => Workspace.Activate(tab.Id)" @onmouseup="e => TabMouseUp(e, tab.Id)" @onmousedown:preventDefault="true"><span>@tab.Title</span><small>@tab.AssemblyName</small><i @onclick:stopPropagation @onclick="() => Workspace.Close(tab.Id)">×</i></button> }
+        @foreach (var tab in Workspace.Tabs) { <button class="tab @(Workspace.ActiveTabId == tab.Id ? "active" : null)" @onclick="() => Workspace.Activate(tab.Id)" @onmouseup="e => TabMouseUp(e, tab.Id)" @onmousedown:preventDefault="true"><span>@tab.Title</span><small>@(tab.IsLoading ? "Decompiling…" : tab.AssemblyName)</small><i @onclick:stopPropagation @onclick="() => CloseTab(tab.Id)">×</i></button> }
       </nav>
       <div class="document-content">
-        @if (Workspace.ActiveTab is { } active) { <SourceView Document="active.Document" OnNavigate="NavigateFromSourceAsync" /> }
+        @if (Workspace.ActiveTab is { IsLoading: true } loading) { <div class="decompiling-panel"><span class="decompiling-spinner"></span><strong>Decompiling @loading.Title…</strong><small>Large types can take a moment. You can close this tab to cancel.</small></div> }
+        else if (Workspace.ActiveTab is { Error: not null } failed) { <div class="decompiling-panel error"><strong>Decompilation failed</strong><small>@failed.Error</small></div> }
+        else if (Workspace.ActiveTab is { } active) { <SourceView Document="active.Document" OnNavigate="NavigateFromSourceAsync" /> }
       </div>
       @if (searchOpen) {
         <section class="search-panel" @ref="searchPanel" style="height:@($"{searchPanelHeight}px")">
@@ -63,7 +65,7 @@
       }
     </section>
   </main>
-  <footer><span class="status-dot @(Workspace.IsBusy ? "busy" : null)"></span>@Workspace.Status <span class="spacer"></span>@Backend.Assemblies.Count open</footer>
+  <footer><span class="status-dot @(Workspace.IsBusy ? "busy" : null)"></span>@Workspace.Status</footer>
 </div>
 
 @code {
@@ -75,6 +77,7 @@
   private Guid? SelectedAssemblyMvid => selectedSymbol?.ModuleMvid ?? Workspace.ActiveTab?.Document.Symbol.ModuleMvid;
   private CancellationTokenSource? saveDelay;
   private CancellationTokenSource? searchDelay;
+  private readonly Dictionary<string, CancellationTokenSource> decompilations = [];
   private bool restoring;
   private IReadOnlyList<SearchResult> results = [];
   private bool searchOpen;
@@ -123,13 +126,50 @@
   private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
   private void ToggleSearchPanel() { if (searchOpen) CloseSearch(); else OpenSearchPanel(); }
-  private async Task UnloadAllAsync() { menuOpen = false; Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
-  private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false) { selectedSymbol = symbol; Workspace.SetBusy(true, "Decompiling…"); try { var doc = await Backend.DecompileAsync(symbol); var name = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly"; Workspace.Open(doc, name, newTab); Workspace.SetBusy(false, $"Decompiled {doc.Title}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
-  private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0);
+  private async Task UnloadAllAsync() { menuOpen = false; CancelAllDecompilations(); Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
+  private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false, string? displayName = null, bool isType = false)
+  {
+    selectedSymbol = symbol;
+    var assemblyName = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly";
+    if (isType || IsTypeSymbol(symbol))
+    {
+      var tabId = Workspace.OpenLoading(symbol, displayName ?? "Type", assemblyName);
+      var cancellation = new CancellationTokenSource();
+      decompilations[tabId] = cancellation;
+      _ = DecompileTypeIntoTabAsync(tabId, symbol, cancellation);
+      return;
+    }
+    Workspace.SetBusy(true, "Decompiling…");
+    try { var doc = await Backend.DecompileAsync(symbol); Workspace.Open(doc, assemblyName, newTab); Workspace.SetBusy(false, $"Decompiled {doc.Title}"); }
+    catch (Exception ex) { Workspace.SetBusy(false, ex.Message); }
+  }
+  private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0, request.DisplayName, request.Kind == TreeNodeKind.Type);
   private async Task OpenReferenceAsync(NodeId reference) { Workspace.SetBusy(true, "Loading reference…"); try { var assembly = await Backend.OpenReferenceAsync(reference); revealedPath = new HashSet<NodeId> { assembly.RootNode }; selectedSymbol = null; Workspace.SetBusy(false, $"Opened {assembly.Name}"); StateHasChanged(); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
-  private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab || Workspace.Tabs.Count == 0); StateHasChanged(); }
-  private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab); StateHasChanged(); }
-  private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) Workspace.Close(id); }
+  private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab || Workspace.Tabs.Count == 0, result.Name, result.Kind == "Type"); StateHasChanged(); }
+  private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab, request.DisplayName, request.Kind == TreeNodeKind.Type); StateHasChanged(); }
+  private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) CloseTab(id); }
+  private static bool IsTypeSymbol(SymbolId symbol) => (symbol.MetadataToken >> 24) == 0x02;
+  private async Task DecompileTypeIntoTabAsync(string tabId, SymbolId symbol, CancellationTokenSource cancellation)
+  {
+    var token = cancellation.Token;
+    try
+    {
+      var document = await Backend.DecompileAsync(symbol, token);
+      token.ThrowIfCancellationRequested();
+      await InvokeAsync(() => { Workspace.CompleteLoading(tabId, document); Workspace.SetBusy(false, $"Decompiled {document.Title}"); });
+    }
+    catch (OperationCanceledException) { }
+    catch (Exception ex) { await InvokeAsync(() => { Workspace.FailLoading(tabId, ex.Message); Workspace.SetBusy(false, ex.Message); }); }
+    finally { if (decompilations.Remove(tabId, out var current)) current.Dispose(); }
+  }
+  private void CloseTab(string id)
+  {
+    var wasDecompiling = decompilations.TryGetValue(id, out var cancellation);
+    if (cancellation is not null) _ = cancellation.CancelAsync();
+    Workspace.Close(id);
+    if (wasDecompiling) Workspace.SetBusy(false, "Decompilation cancelled");
+  }
+  private void CancelAllDecompilations() { foreach (var cancellation in decompilations.Values) { cancellation.Cancel(); cancellation.Dispose(); } decompilations.Clear(); }
   [JSInvokable] public async Task NavigateHistory(bool forward)
   {
     if (!(forward ? Workspace.GoForward() : Workspace.GoBack())) return;
@@ -175,5 +215,5 @@
     }
     catch (Exception ex) { Workspace.SetBusy(false, $"Solution extraction failed: {ex.Message}"); }
   }
-  public void Dispose() { Workspace.Changed -= Refresh; saveDelay?.Cancel(); saveDelay?.Dispose(); searchDelay?.Cancel(); searchDelay?.Dispose(); selfReference?.Dispose(); }
+  public void Dispose() { Workspace.Changed -= Refresh; saveDelay?.Cancel(); saveDelay?.Dispose(); searchDelay?.Cancel(); searchDelay?.Dispose(); CancelAllDecompilations(); selfReference?.Dispose(); }
 }

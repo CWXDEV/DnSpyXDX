@@ -139,15 +139,17 @@ window.dnSpyXdx.initSourceFind = function (source, dotNet) {
 };
 window.dnSpyXdx.disposeSourceFind = function (source) {
   if (window.dnSpyXdx.sourceFindTarget?.source === source) window.dnSpyXdx.sourceFindTarget = null;
-  window.dnSpyXdx.clearSourceFind();
+  window.dnSpyXdx.clearSourceFind(source);
 };
-window.dnSpyXdx.clearSourceFind = function () {
+window.dnSpyXdx.clearSourceFind = function (source) {
   if (!CSS.highlights) return;
-  CSS.highlights.delete("source-find-results");
-  CSS.highlights.delete("source-find-active");
+  CSS.highlights.clear();
+  // Some embedded Chromium builds defer repainting custom highlights until the
+  // highlighted element is invalidated.
+  if (source) source.style.setProperty("--source-find-repaint", Date.now());
 };
 window.dnSpyXdx.findInSource = function (source, query, requestedIndex) {
-  window.dnSpyXdx.clearSourceFind();
+  window.dnSpyXdx.clearSourceFind(source);
   if (!source || !query) return { count: 0, index: -1 };
   const ranges = [];
   const needle = query.toLocaleLowerCase();

@@ -17,7 +17,7 @@
   private ElementReference row;
   private bool IsSelected => Node.Symbol is { } symbol && symbol == SelectedSymbol;
   private string Icon => Node.Kind switch { TreeNodeKind.Assembly => "◈", TreeNodeKind.Namespace => "N", TreeNodeKind.Type => "C", TreeNodeKind.Method or TreeNodeKind.Constructor => "M", TreeNodeKind.Property => "P", TreeNodeKind.Field => "F", TreeNodeKind.Event => "E", TreeNodeKind.Reference => "↗", TreeNodeKind.Resource => "◆", _ => "▦" };
-  private async Task SelectAsync(MouseEventArgs e) { if (Node.Symbol is { } symbol) await OnOpen.InvokeAsync(new NavigationRequest(symbol, e.CtrlKey)); else if (Node.Kind == TreeNodeKind.Reference) await OnOpenReference.InvokeAsync(Node.Id); else await ToggleAsync(); }
+  private async Task SelectAsync(MouseEventArgs e) { if (Node.Symbol is { } symbol) await OnOpen.InvokeAsync(new NavigationRequest(symbol, e.CtrlKey, Node.Kind, Node.Name)); else if (Node.Kind == TreeNodeKind.Reference) await OnOpenReference.InvokeAsync(Node.Id); else await ToggleAsync(); }
   private async Task ToggleAsync() { if (!Node.HasChildren) return; expanded = !expanded; manuallyCollapsed = !expanded; if (expanded && children.Count == 0) children = await Backend.GetChildrenAsync(Node.Id); }
   protected override async Task OnParametersSetAsync() { var inPath = ExpandedPath?.Contains(Node.Id) == true; if (!inPath) manuallyCollapsed = false; if (Node.HasChildren && inPath && !manuallyCollapsed) { expanded = true; if (children.Count == 0) children = await Backend.GetChildrenAsync(Node.Id); } }
   protected override async Task OnAfterRenderAsync(bool firstRender) { if (IsSelected) await JS.InvokeVoidAsync("dnSpyXdx.scrollTreeNodeIntoView", row); }

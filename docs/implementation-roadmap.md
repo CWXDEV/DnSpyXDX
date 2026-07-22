@@ -4,36 +4,39 @@
 
 The estimates below assume one experienced C# developer working mostly full-time. They are planning ranges, not commitments.
 
-| Phase | Deliverable | Estimate | Exit condition |
-| --- | --- | ---: | --- |
-| 0. Feasibility spike | Photino + Blazor + .NET 10 shell; ILSpy package loads a test DLL on both OSes | 2–4 days | Same branch launches and decompiles one type on Windows and Linux |
-| 1. Application skeleton | Project split, DI, logging, settings, native dialogs, CI builds | 3–5 days | Clean publish artifacts for both RIDs |
-| 2. Assembly workspace | Open/close sessions, lazy virtualized tree, metadata/error views | 1–2 weeks | Large test assembly is browsable without UI stalls |
-| 3. Decompiled documents | Monaco, type/member decompilation, tabs, caching, cancellation | 1–2 weeks | Stable type/member viewing and tab restoration |
-| 4. Navigation and search | Symbol IDs, history, semantic spans, Ctrl+click, indexed name search | 1–2 weeks | Navigation acceptance tests pass |
-| 5. Project and `.slnx` export | Whole-project adapter, staging, multi-project mapping, reports, optional build | 1–2 weeks | One- and multi-assembly exports are deterministic and validated |
-| 6. Hardening | Malformed inputs, resource/path safety, memory/concurrency controls, recovery | 1–2 weeks | Adversarial fixture suite cannot corrupt output or freeze UI indefinitely |
-| 7. Release engineering | installers/archive layout, prerequisites, licenses, smoke tests, docs | 3–5 days | Reproducible Windows/Linux x64 release candidate |
+Status was audited against the repository on 2026-07-22. **Partial** means useful parts exist, but the stated exit condition has not been demonstrated.
+
+| Phase | Status | Deliverable | Estimate | Exit condition |
+| --- | --- | --- | ---: | --- |
+| 0. Feasibility spike | Partial | Photino + Blazor + .NET 10 shell; ILSpy package loads a test DLL on both OSes | 2–4 days | Shell and decompilation exist; launch/decompile smoke tests on both Windows and Linux are not recorded |
+| 1. Application skeleton | Partial | Project split, DI, logging, settings, native dialogs, CI builds | 3–5 days | Split projects, DI, filtered logging, session/window state, and dialogs exist; CI and verified dual-RID artifacts do not |
+| 2. Assembly workspace | Partial | Open/close sessions, lazy virtualized tree, metadata/error views | 1–2 weeks | Tree nodes load lazily, but tree virtualization and dedicated metadata/error views are incomplete |
+| 3. Decompiled documents | Partial | Monaco, type/member decompilation, tabs, bounded caching, cancellation, large-document virtualization | 1–2 weeks | Type/member tabs, restoration, loading feedback, cancellation, and an unbounded cache exist; Monaco, bounded caching, and large-source rendering remain |
+| 4. Navigation and search | Partial | Symbol IDs, history, semantic spans, Ctrl+click, indexed name search | 1–2 weeks | History, symbol IDs, source links, and workspace search exist; links are name-based heuristics and search scans metadata rather than using an index |
+| 5. Project and `.slnx` export | Partial | Whole-project adapter, staging, multi-project mapping, reports, optional build | 1–2 weeks | Export, staging, `.slnx`, progress, reports, and optional validation exist; open-assembly references are not remapped to project references |
+| 6. Hardening | Partial | Malformed inputs, resource/path safety, memory/concurrency controls, recovery | 1–2 weeks | Basic validation, staging, cancellation, serialized per-session decompilation, and recovery exist; size/memory limits and the adversarial fixture suite do not |
+| 7. Release engineering | Partial | installers/archive layout, prerequisites, licenses, smoke tests, docs | 3–5 days | Requirements and manual publish commands are documented; automation, packaged layouts, license bundling, and smoke tests remain |
 
 A realistic read-only MVP is approximately **6–10 weeks** for one developer. Semantic source hyperlinks and reliable multi-project export are the two areas most likely to move the schedule.
 
 ## First implementation backlog
 
-Build these tickets in order:
+Build these tickets in order. Checked items are supported by concrete production code and, where practical, tests; partial items remain unchecked.
 
-1. Create the .NET 10 solution and Photino.Blazor host.
-2. Add a Razor three-pane shell: assembly tree, source tabs, status/output panel.
-3. Add `IDecompilerBackend` and a test fake.
-4. Implement `AssemblySession` with `PEFile` and `UniversalAssemblyResolver`.
-5. Show assembly metadata, references, namespaces, and types lazily.
-6. Decompile a selected type into a plain read-only source view.
-7. Integrate Monaco and preserve model/view state per tab.
-8. Add member nodes and member-level decompilation.
-9. Add cancellation, progress, error documents, and an LRU cache.
-10. Implement history and symbol identity.
-11. Add semantic reference spans and editor navigation.
-12. Add workspace-wide name search.
-13. Export one assembly with `WholeProjectDecompiler`.
-14. Add `SlnxWriter`, multi-project export, and project-reference mapping.
-15. Add optional `dotnet build` validation and a persistent export report.
-16. Add Windows/Linux publishing and GUI smoke tests.
+1. [x] Create the .NET 10 solution and Photino.Blazor host.
+2. [ ] **Partial:** Add a Razor three-pane shell: assembly tree, source tabs, and status/output panel. The shell and status bar exist; there is no general output panel.
+3. [x] Add `IDecompilerBackend` and a test fake.
+4. [x] Implement `AssemblySession` with `PEFile` and `UniversalAssemblyResolver`.
+5. [x] Show assembly details, references, resources, namespaces, and types lazily.
+6. [x] Decompile a selected type into a plain read-only source view.
+7. [ ] Add a large-document source pipeline: cache presentation output, tokenize incrementally off the UI thread, render only visible lines, load nearby line ranges on scroll, and cancel pending presentation work when its tab closes. Unrelated UI changes must not re-tokenize an unchanged document, and closing a very large document must remain responsive.
+8. [ ] Integrate Monaco (or confirm another virtualized editor) and preserve model/view state per tab.
+9. [x] Add member nodes and member-level decompilation.
+10. [ ] **Partial:** Add cancellation, progress, error documents, and an LRU cache. Loading feedback, cancellation, error tabs, and caching exist; the cache has no eviction or memory bound.
+11. [x] Implement history and symbol identity.
+12. [ ] **Partial:** Add semantic reference spans and editor navigation. Navigation exists, but current links are derived from identifier names rather than precise decompiler reference spans.
+13. [x] Add workspace-wide type/member name search with filtering and debounced UI updates.
+14. [x] Export one assembly with `WholeProjectDecompiler`.
+15. [ ] **Partial:** Add `SlnxWriter`, multi-project export, and project-reference mapping. Solution and multi-project output exist; project-reference remapping does not.
+16. [x] Add optional `dotnet build` validation and a persistent export report.
+17. [ ] Add Windows/Linux publishing automation and GUI smoke tests.

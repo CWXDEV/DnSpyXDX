@@ -36,6 +36,37 @@ public sealed class WorkspaceState
         Changed?.Invoke();
     }
 
+    public string OpenLoading(SymbolId symbol, string title, string assemblyName)
+    {
+        var placeholder = new DecompilerDocument(symbol, title, "csharp", "", [], []);
+        var tab = new DocumentTab(Guid.NewGuid().ToString("N"), placeholder, assemblyName, isLoading: true);
+        tabs.Add(tab);
+        ActiveTabId = tab.Id;
+        Status = $"Decompiling {title}…";
+        Changed?.Invoke();
+        return tab.Id;
+    }
+
+    public bool CompleteLoading(string id, DecompilerDocument document)
+    {
+        var tab = tabs.FirstOrDefault(t => t.Id == id);
+        if (tab is null || !tab.IsLoading) return false;
+        tab.CompleteLoading(document);
+        Status = $"Decompiled {document.Title}";
+        Changed?.Invoke();
+        return true;
+    }
+
+    public bool FailLoading(string id, string message)
+    {
+        var tab = tabs.FirstOrDefault(t => t.Id == id);
+        if (tab is null || !tab.IsLoading) return false;
+        tab.FailLoading(message);
+        Status = message;
+        Changed?.Invoke();
+        return true;
+    }
+
     public bool GoBack() => Navigate(tab => tab.GoBack());
     public bool GoForward() => Navigate(tab => tab.GoForward());
 
@@ -69,7 +100,7 @@ public sealed class WorkspaceState
 
 /// <summary>A tab is a view whose content changes as you navigate, so it keeps its own back/forward
 /// history rather than being identified by the symbol it happens to be showing.</summary>
-public sealed class DocumentTab(string id, DecompilerDocument document, string assemblyName)
+public sealed class DocumentTab(string id, DecompilerDocument document, string assemblyName, bool isLoading = false)
 {
     private readonly List<(DecompilerDocument Document, string AssemblyName)> back = [];
     private readonly List<(DecompilerDocument Document, string AssemblyName)> forward = [];
@@ -78,6 +109,8 @@ public sealed class DocumentTab(string id, DecompilerDocument document, string a
     public DecompilerDocument Document { get; private set; } = document;
     public string AssemblyName { get; private set; } = assemblyName;
     public string Title => Document.Title;
+    public bool IsLoading { get; private set; } = isLoading;
+    public string? Error { get; private set; }
     public bool CanGoBack => back.Count > 0;
     public bool CanGoForward => forward.Count > 0;
 
@@ -87,6 +120,19 @@ public sealed class DocumentTab(string id, DecompilerDocument document, string a
         back.Add((Document, AssemblyName));
         forward.Clear();
         (Document, AssemblyName) = (next, nextAssemblyName);
+    }
+
+    internal void CompleteLoading(DecompilerDocument document)
+    {
+        Document = document;
+        IsLoading = false;
+        Error = null;
+    }
+
+    internal void FailLoading(string message)
+    {
+        IsLoading = false;
+        Error = message;
     }
 
     internal bool GoBack() => Step(back, forward);

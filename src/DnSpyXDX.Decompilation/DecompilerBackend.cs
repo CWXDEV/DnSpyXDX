@@ -320,13 +320,15 @@ internal sealed class AssemblySession : IDisposable
         {
             if (cache.TryGetValue(symbol.MetadataToken, out cached)) return cached;
             var handle = MetadataTokens.EntityHandle(symbol.MetadataToken);
+            decompiler.CancellationToken = ct;
             var text = await Task.Run(() => AddTokenComments(decompiler.DecompileAsString([handle]), handle), ct);
+            ct.ThrowIfCancellationRequested();
             var title = GetEntityName(handle);
             var result = new DecompilerDocument(symbol, title, "csharp", text, [], [], BuildSymbolLinks(handle));
             cache[symbol.MetadataToken] = result;
             return result;
         }
-        finally { gate.Release(); }
+        finally { decompiler.CancellationToken = default; gate.Release(); }
     }
 
     private IReadOnlyDictionary<string, SymbolId> TypeLinks => typeLinks ??= BuildTypeLinks();

@@ -50,7 +50,7 @@ public sealed record DecompilerDocument(
 public sealed record SearchResult(SymbolId Symbol, string Name, string Kind, string AssemblyName, string Namespace);
 
 /// <summary>A request to show a symbol; <paramref name="NewTab"/> mirrors dnSpy's Ctrl+click.</summary>
-public readonly record struct NavigationRequest(SymbolId Symbol, bool NewTab);
+public readonly record struct NavigationRequest(SymbolId Symbol, bool NewTab, TreeNodeKind? Kind = null, string? DisplayName = null);
 
 public sealed record ExportRequest(IReadOnlyList<Guid> SessionIds, string Destination, bool ValidateBuild = false);
 public sealed record ExportProgress(int Completed, int Total, string Message);
