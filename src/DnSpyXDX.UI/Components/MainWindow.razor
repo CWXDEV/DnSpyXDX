@@ -31,9 +31,18 @@
   <main>
     <div class="explorer-pane" @ref="explorer" style="width:@($"{explorerWidth}px")">
       <aside class="explorer">
-        <div class="panel-title">ASSEMBLIES</div>
-        @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
-        @foreach (var assembly in Backend.Assemblies) { <TreeNode Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" /> }
+        <header class="explorer-header">
+          <div class="panel-title">ASSEMBLIES</div>
+          <div class="tree-actions" aria-label="Assembly tree controls">
+            <button class="tree-action" title="Collapse all nodes" aria-label="Collapse all nodes" disabled="@(Backend.Assemblies.Count == 0)" @onclick="CollapseAllNodes">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5-5 5 5"></path><path d="m7 10 5-5 5 5"></path></svg>
+            </button>
+          </div>
+        </header>
+        <div class="explorer-tree">
+          @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
+          @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" CollapseVersion="treeCollapseVersion" /> }
+        </div>
       </aside>
       <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
     </div>
@@ -88,6 +97,7 @@
   private ElementReference searchInput;
   private double explorerWidth = 300;
   private double searchPanelHeight = 230;
+  private int treeCollapseVersion;
   private DotNetObjectReference<MainWindow>? selfReference;
   protected override async Task OnInitializedAsync()
   {
@@ -184,6 +194,7 @@
   private async Task RunSearchAsync(CancellationToken token) { var found = await Backend.SearchAsync(query, token); token.ThrowIfCancellationRequested(); var selectedMvid = SelectedAssemblyMvid; results = found.Where(r => searchKind == "All" || r.Kind == searchKind).Where(r => searchScope == "All" || selectedMvid is not null && r.Symbol.ModuleMvid == selectedMvid).ToArray(); searchOpen = true; StateHasChanged(); }
   private void CloseSearch() { searchOpen = false; ScheduleSave(); StateHasChanged(); }
   private void LayoutOptionChanged() => ScheduleSave();
+  private void CollapseAllNodes() => treeCollapseVersion++;
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
   [JSInvokable] public void SearchPanelResized(double height) { searchPanelHeight = height; ScheduleSave(); }
   private async Task SearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchAsync(); }
