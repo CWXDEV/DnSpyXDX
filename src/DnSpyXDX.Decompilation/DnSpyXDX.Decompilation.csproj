@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../DnSpyXDX.Application/DnSpyXDX.Application.csproj" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
+  </ItemGroup>
+</Project>

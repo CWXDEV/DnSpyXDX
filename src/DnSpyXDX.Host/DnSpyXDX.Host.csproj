@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>DnSpyXDX.Host</RootNamespace>
+    <AssemblyName>DnSpyXDX</AssemblyName>
+    <Product>DnSpyXDX</Product>
+    <Description>A cross-platform desktop explorer for inspecting, searching, decompiling, and exporting managed .NET assemblies.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DnSpyXDX.Application/DnSpyXDX.Application.csproj" />
+    <ProjectReference Include="../DnSpyXDX.Decompilation/DnSpyXDX.Decompilation.csproj" />
+    <ProjectReference Include="../DnSpyXDX.Export/DnSpyXDX.Export.csproj" />
+    <ProjectReference Include="../DnSpyXDX.UI/DnSpyXDX.UI.csproj" />
+    <PackageReference Include="Photino.Blazor" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content
+      Update="wwwroot/**/*"
+      CopyToOutputDirectory="PreserveNewest"
+      CopyToPublishDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+</Project>

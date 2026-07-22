@@ -19,38 +19,38 @@ DnSpyXDX.slnx
 Directory.Build.props
 Directory.Packages.props
 src/
-  DecompilerApp.Host/
+  DnSpyXDX.Host/
     Program.cs
-    DecompilerApp.Host.csproj
-  DecompilerApp.UI/
+    DnSpyXDX.Host.csproj
+  DnSpyXDX.UI/
     Components/
     Layout/
     wwwroot/
       js/codeEditor.js
       css/app.css
-    DecompilerApp.UI.csproj
-  DecompilerApp.Application/
+    DnSpyXDX.UI.csproj
+  DnSpyXDX.Application/
     Assemblies/
     Documents/
     Navigation/
     Search/
     Export/
-    DecompilerApp.Application.csproj
-  DecompilerApp.Decompilation/
+    DnSpyXDX.Application.csproj
+  DnSpyXDX.Decompilation/
     IlSpyDecompilerBackend.cs
     AssemblySession.cs
     MetadataTreeBuilder.cs
     ReferenceResolver.cs
-    DecompilerApp.Decompilation.csproj
-  DecompilerApp.Export/
+    DnSpyXDX.Decompilation.csproj
+  DnSpyXDX.Export/
     ProjectExportService.cs
     SlnxWriter.cs
     ExportReport.cs
-    DecompilerApp.Export.csproj
+    DnSpyXDX.Export.csproj
 tests/
-  DecompilerApp.Decompilation.Tests/
-  DecompilerApp.Export.Tests/
-  DecompilerApp.UI.Tests/
+  DnSpyXDX.Decompilation.Tests/
+  DnSpyXDX.Export.Tests/
+  DnSpyXDX.UI.Tests/
   TestAssemblies/
 ```
 

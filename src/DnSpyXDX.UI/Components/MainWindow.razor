@@ -1,0 +1,172 @@
+@implements IDisposable
+@inject IDecompilerBackend Backend
+@inject IProjectExportService Exporter
+@inject IFileDialogService Dialogs
+@inject WorkspaceState Workspace
+@inject IJSRuntime JS
+@inject IWorkspaceSessionService Session
+
+<div class="app-shell">
+  <header class="toolbar">
+    <div class="app-menu">
+      <button class="hamburger" title="Application menu" aria-label="Application menu" @onclick="ToggleMenu"><span></span><span></span><span></span></button>
+      @if (menuOpen) {
+        <div class="menu-dismiss" @onclick="CloseMenu"></div>
+        <div class="menu-popup">
+          <div class="menu-identity"><img src="_content/DnSpyXDX.UI/images/dnspyxdx-logo.webp" alt=""><span>DnSpyXDX</span></div>
+          <button @onclick="OpenFromMenuAsync" disabled="@Workspace.IsBusy"><span>Open assembly</span></button>
+          <button @onclick="ExportFromMenuAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Extract solution</span></button>
+          <button @onclick="UnloadAllAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Unload all assemblies</span></button>
+        </div>
+      }
+    </div>
+    <div class="toolbar-navigation" aria-label="Document navigation">
+      <button class="toolbar-icon" title="Back (Alt+Left)" aria-label="Back" disabled="@(Workspace.ActiveTab?.CanGoBack != true)" @onclick="() => NavigateHistory(false)">←</button>
+      <button class="toolbar-icon" title="Forward (Alt+Right)" aria-label="Forward" disabled="@(Workspace.ActiveTab?.CanGoForward != true)" @onclick="() => NavigateHistory(true)">→</button>
+    </div>
+    <button class="toolbar-icon search-toolbar-button @(searchOpen ? "active" : null)" title="@(searchOpen ? "Close search" : "Open search")" aria-label="@(searchOpen ? "Close search" : "Open search")" aria-pressed="@searchOpen" disabled="@(Backend.Assemblies.Count == 0)" @onclick="ToggleSearchPanel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.5 15.5 5 5"></path></svg>
+    </button>
+  </header>
+  <main>
+    <div class="explorer-pane" @ref="explorer" style="width:@($"{explorerWidth}px")">
+      <aside class="explorer">
+        <div class="panel-title">ASSEMBLIES</div>
+        @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
+        @foreach (var assembly in Backend.Assemblies) { <TreeNode Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" /> }
+      </aside>
+      <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
+    </div>
+    <section class="document-area">
+      <nav class="tabs">
+        @foreach (var tab in Workspace.Tabs) { <button class="tab @(Workspace.ActiveTabId == tab.Id ? "active" : null)" @onclick="() => Workspace.Activate(tab.Id)" @onmouseup="e => TabMouseUp(e, tab.Id)" @onmousedown:preventDefault="true"><span>@tab.Title</span><small>@tab.AssemblyName</small><i @onclick:stopPropagation @onclick="() => Workspace.Close(tab.Id)">×</i></button> }
+      </nav>
+      <div class="document-content">
+        @if (Workspace.ActiveTab is { } active) { <SourceView Document="active.Document" OnNavigate="NavigateFromSourceAsync" /> }
+      </div>
+      @if (searchOpen) {
+        <section class="search-panel" @ref="searchPanel" style="height:@($"{searchPanelHeight}px")">
+          <div class="search-resizer" title="Drag to resize search results"></div>
+          <header><strong>Search</strong><input @ref="searchInput" @bind="query" @bind:event="oninput" @onkeydown="SearchKey" placeholder="Type or member name…" /><select @bind="searchKind" @bind:after="LayoutOptionChanged" title="Member type"><option value="All">All members</option><option value="Type">Types</option><option value="Method">Methods</option><option value="Field">Fields</option><option value="Property">Properties</option><option value="Event">Events</option></select><select @bind="searchScope" @bind:after="LayoutOptionChanged" title="Assembly scope"><option value="All">All assemblies</option><option value="Selected" disabled="@(SelectedAssemblyMvid is null)">Selected assembly</option></select><button class="run-search" @onclick="SearchAsync">Search</button><small>@results.Count result@(results.Count == 1 ? "" : "s")</small><button class="close-search" title="Close search" @onclick="CloseSearch">×</button></header>
+          <div class="search-results">
+            @if (results.Count == 0) { <div class="no-results">@(string.IsNullOrWhiteSpace(query) ? "Type a name to search across open assemblies." : "No matching types or members.")</div> }
+            @foreach (var result in results) {
+              <button class="search-result" @onclick="e => OpenSearchResultAsync(result, e.CtrlKey)">
+                <span class="result-kind result-@result.Kind.ToLowerInvariant()">@result.Kind</span><span class="result-name">@result.Name</span><span class="result-namespace">@result.Namespace</span><span class="result-assembly">@result.AssemblyName</span>
+              </button>
+            }
+          </div>
+        </section>
+      }
+    </section>
+  </main>
+  <footer><span class="status-dot @(Workspace.IsBusy ? "busy" : null)"></span>@Workspace.Status <span class="spacer"></span>@Backend.Assemblies.Count open</footer>
+</div>
+
+@code {
+  private string query = "";
+  private ElementReference explorer;
+  private ElementReference searchPanel;
+  private IReadOnlySet<NodeId> revealedPath = new HashSet<NodeId>();
+  private SymbolId? selectedSymbol;
+  private Guid? SelectedAssemblyMvid => selectedSymbol?.ModuleMvid ?? Workspace.ActiveTab?.Document.Symbol.ModuleMvid;
+  private CancellationTokenSource? saveDelay;
+  private bool restoring;
+  private IReadOnlyList<SearchResult> results = [];
+  private bool searchOpen;
+  private string searchKind = "All";
+  private string searchScope = "All";
+  private bool menuOpen;
+  private bool focusSearch;
+  private ElementReference searchInput;
+  private double explorerWidth = 300;
+  private double searchPanelHeight = 230;
+  private DotNetObjectReference<MainWindow>? selfReference;
+  protected override async Task OnInitializedAsync()
+  {
+    Workspace.Changed += Refresh;
+    restoring = true;
+    Workspace.SetBusy(true, "Restoring session…");
+    try
+    {
+      await Session.RestoreAsync();
+      var ui = Session.UiState;
+      explorerWidth = Math.Clamp(ui.ExplorerWidth, 190, 1200);
+      searchPanelHeight = Math.Clamp(ui.SearchPanelHeight, 120, 900);
+      searchOpen = ui.SearchOpen;
+      searchKind = ui.SearchKind;
+      searchScope = ui.SearchScope;
+      if (Workspace.ActiveTab is { } active)
+      {
+        selectedSymbol = active.Document.Symbol;
+        revealedPath = (await Backend.GetPathAsync(active.Document.Symbol)).ToHashSet();
+      }
+    }
+    finally
+    {
+      restoring = false;
+      Workspace.SetBusy(false, Backend.Assemblies.Count > 0 ? "Session restored" : "Ready");
+    }
+  }
+  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
+  private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
+  private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
+  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
+  private async Task OpenAsync() { var path = await Dialogs.OpenAssemblyAsync(); if (path is null) return; Workspace.SetBusy(true, "Opening assembly…"); try { await Backend.OpenAsync(path); Workspace.SetBusy(false, $"Opened {Path.GetFileName(path)}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
+  private void ToggleMenu() => menuOpen = !menuOpen;
+  private void CloseMenu() => menuOpen = false;
+  private async Task OpenFromMenuAsync() { menuOpen = false; await OpenAsync(); }
+  private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
+  private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
+  private void ToggleSearchPanel() { if (searchOpen) CloseSearch(); else OpenSearchPanel(); }
+  private async Task UnloadAllAsync() { menuOpen = false; Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
+  private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false) { selectedSymbol = symbol; Workspace.SetBusy(true, "Decompiling…"); try { var doc = await Backend.DecompileAsync(symbol); var name = Backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == symbol.ModuleMvid)?.Name ?? "Assembly"; Workspace.Open(doc, name, newTab); Workspace.SetBusy(false, $"Decompiled {doc.Title}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
+  private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0);
+  private async Task OpenReferenceAsync(NodeId reference) { Workspace.SetBusy(true, "Loading reference…"); try { var assembly = await Backend.OpenReferenceAsync(reference); revealedPath = new HashSet<NodeId> { assembly.RootNode }; selectedSymbol = null; Workspace.SetBusy(false, $"Opened {assembly.Name}"); StateHasChanged(); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
+  private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab || Workspace.Tabs.Count == 0); StateHasChanged(); }
+  private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab); StateHasChanged(); }
+  private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) Workspace.Close(id); }
+  [JSInvokable] public async Task NavigateHistory(bool forward)
+  {
+    if (!(forward ? Workspace.GoForward() : Workspace.GoBack())) return;
+    if (Workspace.ActiveTab is not { } tab) return;
+    selectedSymbol = tab.Document.Symbol;
+    revealedPath = (await Backend.GetPathAsync(tab.Document.Symbol)).ToHashSet();
+    StateHasChanged();
+  }
+  private async Task SearchAsync() { var found = await Backend.SearchAsync(query); var selectedMvid = SelectedAssemblyMvid; results = found.Where(r => searchKind == "All" || r.Kind == searchKind).Where(r => searchScope == "All" || selectedMvid is not null && r.Symbol.ModuleMvid == selectedMvid).ToArray(); searchOpen = true; StateHasChanged(); }
+  private void CloseSearch() { searchOpen = false; ScheduleSave(); StateHasChanged(); }
+  private void LayoutOptionChanged() => ScheduleSave();
+  [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
+  [JSInvokable] public void SearchPanelResized(double height) { searchPanelHeight = height; ScheduleSave(); }
+  private async Task SearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchAsync(); }
+  private async Task ExportAsync()
+  {
+    var folder = await Dialogs.SelectExportFolderAsync();
+    if (folder is null) return;
+    Workspace.SetBusy(true, "Preparing solution extraction…");
+    var progress = new Progress<ExportProgress>(update =>
+    {
+      if (update.Total <= 0) Workspace.SetBusy(true, update.Message);
+      else
+      {
+        var completed = Math.Clamp(update.Completed, 0, update.Total);
+        var percentage = (int)Math.Round(completed * 100d / update.Total);
+        Workspace.SetBusy(true, $"{percentage}% · {completed}/{update.Total} files — {update.Message}");
+      }
+    });
+    try
+    {
+      // WholeProjectDecompiler is synchronous and CPU-heavy. Running the export pipeline on a
+      // worker thread lets the native folder dialog close and keeps status updates repainting.
+      var request = new ExportRequest(Backend.Assemblies.Select(a => a.SessionId).ToArray(), folder);
+      var report = await Task.Run(() => Exporter.ExportAsync(request, progress));
+      var message = report.Success
+        ? report.Warnings.Count == 0 ? $"Solution extracted to {folder}" : $"Solution extracted with {report.Warnings.Count} warning(s) to {folder}"
+        : $"Solution extraction completed with warnings; see {Path.Combine(folder, "export-report.json")}";
+      Workspace.SetBusy(false, message);
+    }
+    catch (Exception ex) { Workspace.SetBusy(false, $"Solution extraction failed: {ex.Message}"); }
+  }
+  public void Dispose() { Workspace.Changed -= Refresh; saveDelay?.Cancel(); saveDelay?.Dispose(); selfReference?.Dispose(); }
+}

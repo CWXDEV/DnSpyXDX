@@ -1,7 +1,7 @@
 # DnSpyXDX
 
 <p align="center">
-  <img src="src/DecompilerApp.UI/wwwroot/images/xdding.webp" width="400" alt="DnSpyXDX animation">
+  <img src="src/DnSpyXDX.UI/wwwroot/images/xdding.webp" width="400" alt="DnSpyXDX animation">
 </p>
 
 DnSpyXDX is a focused, read-only assembly browser for Windows and Linux. It combines a native Photino window, a Blazor interface, and the ILSpy decompiler engine to provide a compact desktop workflow for understanding compiled C# applications and libraries.
@@ -36,7 +36,7 @@ Linux package names vary between distributions.
 
 ```bash
 dotnet restore DnSpyXDX.slnx
-dotnet run --project src/DecompilerApp.Host
+dotnet run --project src/DnSpyXDX.Host
 ```
 
 ## Build and test
@@ -49,22 +49,22 @@ dotnet test DnSpyXDX.slnx
 ## Publish
 
 ```bash
-dotnet publish src/DecompilerApp.Host -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false
-dotnet publish src/DecompilerApp.Host -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false
+dotnet publish src/DnSpyXDX.Host -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false
+dotnet publish src/DnSpyXDX.Host -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false
 ```
 
 Trimming, Native AOT, and single-file publishing are intentionally disabled for the initial release.
 
 ## Project structure
 
-- `DecompilerApp.Host` — Photino executable, native dialogs, and session/window persistence
-- `DecompilerApp.UI` — Blazor desktop interface and source presentation
-- `DecompilerApp.Application` — application contracts and workspace state
-- `DecompilerApp.Decompilation` — metadata browsing and ILSpy decompilation backend
-- `DecompilerApp.Export` — project export, reports, and `.slnx` generation
-- `DecompilerApp.Tests` — metadata, decompilation, export, and presentation tests
+- `DnSpyXDX.Host` — Photino executable, native dialogs, and session/window persistence
+- `DnSpyXDX.UI` — Blazor desktop interface and source presentation
+- `DnSpyXDX.Application` — application contracts and workspace state
+- `DnSpyXDX.Decompilation` — metadata browsing and ILSpy decompilation backend
+- `DnSpyXDX.Export` — project export, reports, and `.slnx` generation
+- `DnSpyXDX.Tests` — metadata, decompilation, export, and presentation tests
 
-The internal project names remain deliberately generic so the UI host can be replaced without coupling the architecture to the product name.
+The project and namespace names consistently use the DnSpyXDX product identity while retaining clear architectural boundaries.
 
 ## Scope
 

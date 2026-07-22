@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/DnSpyXDX.Application/DnSpyXDX.Application.csproj" />
+    <ProjectReference Include="../../src/DnSpyXDX.Decompilation/DnSpyXDX.Decompilation.csproj" />
+    <ProjectReference Include="../../src/DnSpyXDX.Export/DnSpyXDX.Export.csproj" />
+    <ProjectReference Include="../../src/DnSpyXDX.UI/DnSpyXDX.UI.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+  </ItemGroup>
+</Project>

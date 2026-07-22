@@ -41,10 +41,10 @@ Do not use `net10.0-windows` in shared projects. If a Windows-only helper is eve
 Start with framework-dependent builds during development and self-contained folder publishes for releases:
 
 ```bash
-dotnet publish src/DecompilerApp.Host -c Release -r win-x64 \
+dotnet publish src/DnSpyXDX.Host -c Release -r win-x64 \
   --self-contained true -p:PublishSingleFile=false
 
-dotnet publish src/DecompilerApp.Host -c Release -r linux-x64 \
+dotnet publish src/DnSpyXDX.Host -c Release -r linux-x64 \
   --self-contained true -p:PublishSingleFile=false
 ```
 
