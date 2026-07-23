@@ -19,6 +19,7 @@
   private ElementReference source;
   private DotNetObjectReference<SourceView>? selfReference;
   private SymbolId? renderedSymbol;
+  private SymbolId? renderedFocusSymbol;
   private ElementReference findInput;
   private string findQuery = "";
   private int matchCount;
@@ -43,6 +44,11 @@
       await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToTop", source);
       await JS.InvokeVoidAsync("dnSpyXdx.renderBlockStructure", source);
       if (findOpen) await FindChangedAsync();
+    }
+    if (renderedFocusSymbol != Document.FocusSymbol)
+    {
+      renderedFocusSymbol = Document.FocusSymbol;
+      if (renderedFocusSymbol is { } focus) await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToToken", source, focus.MetadataToken);
     }
     if (focusFind) { focusFind = false; await findInput.FocusAsync(); }
   }

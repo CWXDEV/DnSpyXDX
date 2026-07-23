@@ -537,7 +537,12 @@ internal sealed class AssemblySession : IDisposable
     private TypeDefinitionHandle FindPropertyDeclaringType(PropertyDefinitionHandle target) => metadata.TypeDefinitions.FirstOrDefault(t => metadata.GetTypeDefinition(t).GetProperties().Contains(target));
     private TypeDefinitionHandle FindEventDeclaringType(EventDefinitionHandle target) => metadata.TypeDefinitions.FirstOrDefault(t => metadata.GetTypeDefinition(t).GetEvents().Contains(target));
 
-    private SearchResult Result(EntityHandle h, string name, string kind, string ns) => new(new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), name, kind, Descriptor.Name, ns);
+    private SearchResult Result(EntityHandle h, string name, string kind, string ns)
+    {
+        var symbol = new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h));
+        var declaringType = DeclaringTypeOf(h);
+        return new(symbol, name, kind, Descriptor.Name, ns, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(declaringType)));
+    }
     private string GetEntityName(EntityHandle h) => h.Kind switch
     {
         HandleKind.TypeDefinition => TypeDisplayName(metadata.GetTypeDefinition((TypeDefinitionHandle)h)),

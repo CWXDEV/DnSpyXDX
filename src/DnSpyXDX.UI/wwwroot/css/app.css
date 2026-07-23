@@ -121,6 +121,8 @@ select{appearance:none;color-scheme:dark;height:27px;border:1px solid var(--them
    cannot shift monospace alignment. */
 .code-link{cursor:pointer;border-radius:2px;padding:0 1px;margin:0 -1px}
 .code-link.code-link-active{background:var(--theme-color-264f78);box-shadow:inset 0 0 0 1px var(--theme-color-4e87c0)}
+.code-search-focus{animation:code-search-focus 1s ease-out}
+@keyframes code-search-focus{0%,35%{background:var(--theme-color-264f78);box-shadow:inset 0 0 0 1px var(--theme-color-4e87c0)}100%{background:transparent;box-shadow:none}}
 
 /* Keep the divider outside the scroll container so restored horizontal scroll
    positions cannot move it away from the panel edge. */

@@ -236,7 +236,7 @@
     }
     Workspace.SetBusy(false, $"Unloaded {assembly.Name}");
   }
-  private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false, string? displayName = null, bool isType = false)
+  private async Task OpenSymbolAsync(SymbolId symbol, bool newTab = false, string? displayName = null, bool isType = false, SymbolId? focusSymbol = null)
   {
     selectedSymbol = symbol;
     selectedNode = null;
@@ -247,7 +247,7 @@
       var tabId = Workspace.OpenLoading(symbol, displayName ?? "Type", assemblyName, newTab);
       var cancellation = new CancellationTokenSource();
       decompilations[tabId] = cancellation;
-      _ = DecompileTypeIntoTabAsync(tabId, symbol, cancellation);
+      _ = DecompileTypeIntoTabAsync(tabId, symbol, focusSymbol, cancellation);
       return;
     }
     Workspace.SetBusy(true, "Decompiling…");
@@ -256,16 +256,25 @@
   }
   private Task OpenTreeSymbolAsync(NavigationRequest request) => OpenSymbolAsync(request.Symbol, request.NewTab || Workspace.Tabs.Count == 0, request.DisplayName, request.Kind == TreeNodeKind.Type);
   private async Task OpenReferenceAsync(NodeId reference) { Workspace.SetBusy(true, "Loading reference…"); try { var assembly = await Backend.OpenReferenceAsync(reference); revealedPath = new HashSet<NodeId> { assembly.RootNode }; selectedSymbol = null; selectedNode = assembly.RootNode; treeSelectionVersion++; Workspace.SetBusy(false, $"Opened {assembly.Name}"); StateHasChanged(); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
-  private async Task OpenSearchResultAsync(SearchResult result, bool newTab) { revealedPath = (await Backend.GetPathAsync(result.Symbol)).ToHashSet(); selectedSymbol = result.Symbol; await OpenSymbolAsync(result.Symbol, newTab || Workspace.Tabs.Count == 0, result.Name, result.Kind == "Type"); StateHasChanged(); }
+  private async Task OpenSearchResultAsync(SearchResult result, bool newTab)
+  {
+    revealedPath = (await Backend.GetPathAsync(result.DeclaringType)).ToHashSet();
+    selectedSymbol = result.DeclaringType;
+    selectedNode = null;
+    treeSelectionVersion++;
+    await OpenSymbolAsync(result.DeclaringType, newTab || Workspace.Tabs.Count == 0, result.Kind == "Type" ? result.Name : null, true, result.Kind == "Type" ? null : result.Symbol);
+    StateHasChanged();
+  }
   private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab, request.DisplayName, request.Kind == TreeNodeKind.Type); StateHasChanged(); }
   private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) CloseTab(id); }
   private static bool IsTypeSymbol(SymbolId symbol) => (symbol.MetadataToken >> 24) == 0x02;
-  private async Task DecompileTypeIntoTabAsync(string tabId, SymbolId symbol, CancellationTokenSource cancellation)
+  private async Task DecompileTypeIntoTabAsync(string tabId, SymbolId symbol, SymbolId? focusSymbol, CancellationTokenSource cancellation)
   {
     var token = cancellation.Token;
     try
     {
       var document = await Backend.DecompileAsync(symbol, token);
+      if (focusSymbol is not null) document = document with { FocusSymbol = focusSymbol };
       token.ThrowIfCancellationRequested();
       await InvokeAsync(() =>
       {

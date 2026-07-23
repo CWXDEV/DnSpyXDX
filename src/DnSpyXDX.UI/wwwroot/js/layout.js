@@ -130,6 +130,15 @@ window.dnSpyXdx.initHistoryButtons = function (dotNet) {
 window.dnSpyXdx.scrollSourceToTop = function (source) {
   if (source) source.scrollTop = 0;
 };
+window.dnSpyXdx.scrollSourceToToken = function (source, token) {
+  const target = source?.querySelector(`[data-token="${token}"]`);
+  if (!target) return;
+  source.scrollTop = Math.max(0, target.offsetTop - source.clientHeight / 3);
+  target.classList.remove("code-search-focus");
+  void target.offsetWidth;
+  target.classList.add("code-search-focus");
+  setTimeout(() => target.classList.remove("code-search-focus"), 1000);
+};
 window.dnSpyXdx.initBlockStructure = function (source) {
   if (!source || source._blockStructureObserver) return;
   const schedule = () => {

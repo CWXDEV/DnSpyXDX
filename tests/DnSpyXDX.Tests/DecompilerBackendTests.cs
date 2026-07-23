@@ -115,6 +115,7 @@ public sealed class DecompilerBackendTests
         var members = await backend.GetChildrenAsync(genericType.Id);
         var constructor = members.Single(n => n.Kind == TreeNodeKind.Constructor);
         var searchResult = Assert.Single(await backend.SearchAsync("GenericSample"), result => result.Kind == "Type");
+        var fieldSearchResult = Assert.Single(await backend.SearchAsync(nameof(GenericSample<object>.Field)), result => result.Kind == "Field" && result.Name == nameof(GenericSample<object>.Field));
         var document = await backend.DecompileAsync(genericType.Symbol!.Value);
 
         Assert.Equal("GenericSample<TItem>", constructor.Name);
@@ -123,6 +124,8 @@ public sealed class DecompilerBackendTests
         Assert.Equal("Action<TItem>", members.Single(n => n.Kind == TreeNodeKind.Event && n.Name == nameof(GenericSample<object>.Changed)).TypeDisplay);
         Assert.Equal("TResult", members.Single(n => n.Name == nameof(GenericSample<object>.Convert)).TypeDisplay);
         Assert.Equal("GenericSample<TItem>", searchResult.Name);
+        Assert.Equal(genericType.Symbol, searchResult.DeclaringType);
+        Assert.Equal(genericType.Symbol, fieldSearchResult.DeclaringType);
         Assert.Equal("GenericSample<TItem>", document.Title);
     }
 
