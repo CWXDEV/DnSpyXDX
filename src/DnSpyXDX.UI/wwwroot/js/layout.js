@@ -119,6 +119,15 @@ window.dnSpyXdx.scrollSourceToLine = async function (source, line, lineHeight) {
 window.dnSpyXdx.scrollTreeNodeIntoView = function (row) {
   if (row) row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
 };
+window.dnSpyXdx.scrollTreeToIndex = async function (tree, index, rowHeight) {
+  if (!tree) return;
+  const top = Math.max(0, index * rowHeight - tree.clientHeight / 3);
+  for (let frame = 0; frame < 20; frame++) {
+    tree.scrollTop = top;
+    if (tree.scrollTop > 0 || top === 0) return;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  }
+};
 window.dnSpyXdx.initSourceFind = function (source, dotNet) {
   window.dnSpyXdx.sourceFindTarget = { source, dotNet };
   if (window.dnSpyXdx.sourceFindReady) return;

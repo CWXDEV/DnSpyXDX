@@ -47,10 +47,7 @@
             </button>
           </div>
         </header>
-        <div class="explorer-tree">
-          @if (Backend.Assemblies.Count == 0) { <div class="empty">@(restoring ? "Restoring assembly tree…" : "Open a managed .dll or .exe to begin.")</div> }
-          @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" Tooltip="@($"Loaded from: {Path.GetDirectoryName(assembly.Path)}")" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" OnContextMenu="e => OpenAssemblyContextMenu(e, assembly)" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" SelectedNode="selectedNode" SelectionVersion="treeSelectionVersion" CollapseVersion="treeCollapseVersion" /> }
-        </div>
+        <VirtualizedTree Assemblies="Backend.Assemblies" EmptyMessage="@(restoring ? "Restoring assembly tree…" : "Open a managed .dll or .exe to begin.")" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" OnContextMenu="OpenTreeContextMenu" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" SelectedNode="selectedNode" SelectionVersion="treeSelectionVersion" CollapseVersion="treeCollapseVersion" />
       </aside>
       <div class="explorer-resizer" title="Drag to resize assembly tree"></div>
     </div>
@@ -73,11 +70,11 @@
           </div>
           <div class="search-results">
             @if (results.Count == 0) { <div class="no-results">@(string.IsNullOrWhiteSpace(query) ? "Type a name to search across open assemblies." : "No matching types or members.")</div> }
-            @foreach (var result in results) {
-              <button class="search-result" @onclick="e => OpenSearchResultAsync(result, e.CtrlKey)">
+            else { <Virtualize Items="results" Context="result" ItemSize="28" OverscanCount="10">
+              <button @key="result.Symbol" class="search-result" @onclick="e => OpenSearchResultAsync(result, e.CtrlKey)">
                 <span class="result-kind result-@result.Kind.ToLowerInvariant()">@result.Kind</span><span class="result-name">@result.Name</span><span class="result-namespace">@result.Namespace</span><span class="result-assembly">@result.AssemblyName</span>
               </button>
-            }
+            </Virtualize> }
           </div>
         </section>
       }
@@ -116,7 +113,7 @@
   private CancellationTokenSource? searchDelay;
   private readonly Dictionary<string, CancellationTokenSource> decompilations = [];
   private bool restoring;
-  private IReadOnlyList<SearchResult> results = [];
+  private ICollection<SearchResult> results = Array.Empty<SearchResult>();
   private IReadOnlyList<SearchResult> searchMatches = [];
   private bool searchOpen;
   private string searchKind = "All";
@@ -236,6 +233,11 @@
     contextAssembly = assembly;
     contextMenuX = (int)Math.Round(e.ClientX);
     contextMenuY = (int)Math.Round(e.ClientY);
+  }
+  private void OpenTreeContextMenu((MouseEventArgs Event, NodeId Node) request)
+  {
+    var assembly = Backend.Assemblies.FirstOrDefault(candidate => candidate.SessionId == request.Node.SessionId);
+    if (assembly is not null) OpenAssemblyContextMenu(request.Event, assembly);
   }
   private void CloseAssemblyContextMenu() => contextAssembly = null;
   private async Task UnloadContextAssemblyAsync()
@@ -380,7 +382,7 @@
   }
   private void ApplySearchFilters(string searchedQuery) =>
     results = RankSearchResults(searchMatches, searchedQuery, searchKind, searchScope == "Selected" ? SelectedAssemblyMvid : null);
-  private static IReadOnlyList<SearchResult> RankSearchResults(IReadOnlyList<SearchResult> found, string query, string kind, Guid? moduleMvid) =>
+  private static ICollection<SearchResult> RankSearchResults(IReadOnlyList<SearchResult> found, string query, string kind, Guid? moduleMvid) =>
     found.Where(result => kind == "All" || result.Kind == kind)
       .Where(result => moduleMvid is null || result.Symbol.ModuleMvid == moduleMvid)
       .OrderBy(result => SearchRank(result, query))
