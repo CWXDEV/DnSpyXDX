@@ -109,6 +109,7 @@ internal sealed class AssemblySession : IDisposable
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<int, DecompilerDocument> cache = [];
     private IReadOnlyDictionary<string, SymbolId>? typeLinks;
+    private IReadOnlyDictionary<string, string>? typeClassifications;
     public AssemblyDescriptor Descriptor { get; }
 
     private AssemblySession(PEFile module, CSharpDecompiler decompiler, AssemblyDescriptor descriptor)
@@ -199,8 +200,9 @@ internal sealed class AssemblySession : IDisposable
     private TreeNodeDescriptor TypeNode(TypeDefinitionHandle h)
     {
         var t = metadata.GetTypeDefinition(h);
-        var isEnum = IsEnum(t);
-        return new(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(h):X8}"), TypeDisplayName(t), TreeNodeKind.Type, false, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), Visibility: TypeVisibility(t.Attributes), TypeDisplay: isEnum ? "enum" : TypeKeyword(t.Attributes), NameClassification: isEnum ? "enum" : "type", TypeClassification: "keyword");
+        var kind = Classify(t);
+        var keyword = kind == "staticclass" ? "class" : kind;
+        return new(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(h):X8}"), TypeDisplayName(t), TreeNodeKind.Type, false, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), Visibility: TypeVisibility(t.Attributes), TypeDisplay: keyword, NameClassification: kind, TypeClassification: "keyword");
     }
 
     private IReadOnlyList<TreeNodeDescriptor> TypeChildren(TypeDefinitionHandle handle, CancellationToken ct)
@@ -327,7 +329,6 @@ internal sealed class AssemblySession : IDisposable
         TypeAttributes.NestedAssembly => "internal", TypeAttributes.NestedFamORAssem => "protected internal",
         TypeAttributes.NestedFamANDAssem => "private protected", TypeAttributes.NestedPrivate => "private", _ => "internal"
     };
-    private static string TypeKeyword(TypeAttributes attributes) => (attributes & TypeAttributes.Interface) != 0 ? "interface" : "type";
 
     public async Task<DecompilerDocument> DecompileAsync(SymbolId symbol, CancellationToken ct)
     {
@@ -345,7 +346,7 @@ internal sealed class AssemblySession : IDisposable
             }, ct);
             ct.ThrowIfCancellationRequested();
             var title = GetEntityName(handle);
-            var result = new DecompilerDocument(symbol, title, "csharp", text, [], [], BuildSymbolLinks(handle));
+            var result = new DecompilerDocument(symbol, title, "csharp", text, [], [], BuildSymbolLinks(handle), TypeClassifications: BuildClassifications(handle));
             cache[symbol.MetadataToken] = result;
             return result;
         }
@@ -372,6 +373,84 @@ internal sealed class AssemblySession : IDisposable
         foreach (var name in ambiguous) byName.Remove(name);
         return byName;
     }
+
+    private IReadOnlyDictionary<string, string> TypeClassificationMap => typeClassifications ??= BuildTypeClassifications();
+
+    // Records each type's declared kind (class/interface/enum/struct/delegate) keyed by the simple
+    // name that appears in decompiled source, so the viewer can give enums, interfaces, structs and
+    // delegates their own dnSpy-style colors. Names shared by several types are dropped, matching
+    // BuildTypeLinks, so a color never misrepresents an ambiguous name.
+    private IReadOnlyDictionary<string, string> BuildTypeClassifications()
+    {
+        var byName = new Dictionary<string, string>(StringComparer.Ordinal);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var h in metadata.TypeDefinitions)
+        {
+            var definition = metadata.GetTypeDefinition(h);
+            var name = metadata.GetString(definition.Name);
+            if (name.StartsWith('<')) continue;
+            var display = name.Split('`')[0];
+            if (display.Length == 0) continue;
+            if (!byName.TryAdd(display, Classify(definition))) ambiguous.Add(display);
+        }
+        foreach (var name in ambiguous) byName.Remove(name);
+        return byName;
+    }
+
+    // Combines the assembly-wide type kinds with the members declared by the type being shown, so the
+    // viewer can color a name by what it actually is. Members win over a same-named type, mirroring how
+    // BuildSymbolLinks resolves the click target.
+    private IReadOnlyDictionary<string, string> BuildClassifications(EntityHandle selected)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in TypeClassificationMap) map[pair.Key] = pair.Value;
+
+        var typeHandle = DeclaringTypeOf(selected);
+        if (typeHandle.IsNil) return map;
+        var type = metadata.GetTypeDefinition(typeHandle);
+
+        void AddMember(string name, string kind)
+        {
+            if (name.Length == 0 || name.StartsWith('<')) return;
+            map[name] = kind;
+        }
+
+        foreach (var h in type.GetFields()) AddMember(metadata.GetString(metadata.GetFieldDefinition(h).Name), "field");
+        foreach (var h in type.GetProperties()) AddMember(metadata.GetString(metadata.GetPropertyDefinition(h).Name), "property");
+        foreach (var h in type.GetEvents()) AddMember(metadata.GetString(metadata.GetEventDefinition(h).Name), "event");
+        // Generic parameters are added last so that inside the type's own source a name like T reads as
+        // a type parameter rather than a same-named class, matching dnSpy's distinct parameter color.
+        foreach (var h in type.GetGenericParameters()) AddMember(metadata.GetString(metadata.GetGenericParameter(h).Name), "typeparam");
+        foreach (var m in type.GetMethods())
+            foreach (var h in metadata.GetMethodDefinition(m).GetGenericParameters())
+                AddMember(metadata.GetString(metadata.GetGenericParameter(h).Name), "typeparam");
+        return map;
+    }
+
+    private string Classify(TypeDefinition definition)
+    {
+        if ((definition.Attributes & TypeAttributes.Interface) != 0) return "interface";
+        if (IsEnum(definition)) return "enum";
+        if (IsDelegate(definition)) return "delegate";
+        if (IsValueType(definition)) return "struct";
+        return IsStaticClass(definition) ? "staticclass" : "class";
+    }
+
+    // A static class compiles to an abstract sealed class; that flag pair is unique to static classes,
+    // so it distinguishes them from ordinary, abstract, or sealed classes.
+    private static bool IsStaticClass(TypeDefinition definition) =>
+        (definition.Attributes & (TypeAttributes.Abstract | TypeAttributes.Sealed | TypeAttributes.Interface)) == (TypeAttributes.Abstract | TypeAttributes.Sealed);
+
+    private bool IsBaseType(TypeDefinition definition, params string[] names)
+    {
+        var baseType = definition.BaseType;
+        if (baseType.Kind != HandleKind.TypeReference) return false;
+        var name = metadata.GetString(metadata.GetTypeReference((TypeReferenceHandle)baseType).Name);
+        return names.Contains(name, StringComparer.Ordinal);
+    }
+
+    private bool IsValueType(TypeDefinition definition) => IsBaseType(definition, "ValueType");
+    private bool IsDelegate(TypeDefinition definition) => IsBaseType(definition, "MulticastDelegate", "Delegate");
 
     // Every identifier the viewer can highlight in one document: assembly-wide type names plus the
     // members of the type being shown. Members are scoped to that type so a name like "value"

@@ -21,7 +21,7 @@ public sealed class DecompilerBackendTests
         var testType = Assert.Single(types, n => n.Name == nameof(DecompilerBackendTests));
         Assert.False(testType.HasChildren);
         Assert.Equal("public", testType.Visibility);
-        Assert.Equal("type", testType.TypeDisplay);
+        Assert.Equal("class", testType.TypeDisplay);
         var members = await backend.GetChildrenAsync(testType.Id);
         var method = Assert.Single(members, n => n.Name == nameof(Opens_browses_and_decompiles_a_managed_assembly));
         Assert.Equal("public", method.Visibility);
@@ -32,6 +32,14 @@ public sealed class DecompilerBackendTests
         Assert.Equal(method.Id, path[^1]);
         var sampleEnum = Assert.Single(members, n => n.Name == nameof(SampleEnum));
         Assert.Equal("enum", sampleEnum.NameClassification);
+
+        var topLevel = await backend.GetChildrenAsync(ownNamespace.Id);
+        var staticClass = Assert.Single(topLevel, n => n.Name == nameof(SampleStatic));
+        Assert.Equal("staticclass", staticClass.NameClassification);
+        Assert.Equal("class", staticClass.TypeDisplay);
+        var sampleDelegate = Assert.Single(topLevel, n => n.Name == nameof(SampleDelegate));
+        Assert.Equal("delegate", sampleDelegate.NameClassification);
+        Assert.Equal("delegate", sampleDelegate.TypeDisplay);
         var document = await backend.DecompileAsync(testType.Symbol!.Value);
 
         Assert.Contains("class DecompilerBackendTests", document.Text, StringComparison.Ordinal);
@@ -235,6 +243,13 @@ public sealed class GenericSample<TItem>
     public event Action<TItem>? Changed;
     public TResult? Convert<TResult>() => default;
 }
+
+public static class SampleStatic
+{
+    public static void Ping() { }
+}
+
+public delegate int SampleDelegate(int value);
 
 public sealed class SwitchFormattingSample
 {

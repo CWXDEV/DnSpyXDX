@@ -126,7 +126,7 @@ else
   private async ValueTask<ItemsProviderResult<SourceTokenizedLine>> LoadLinesAsync(ItemsProviderRequest request)
   {
     if (model is null) return new ItemsProviderResult<SourceTokenizedLine>([], 0);
-    var lines = await Cache.GetLinesAsync(model, request.StartIndex, request.Count, Document.SymbolLinks, request.CancellationToken);
+    var lines = await Cache.GetLinesAsync(model, request.StartIndex, request.Count, Document.SymbolLinks, Document.TypeClassifications, request.CancellationToken);
     return new ItemsProviderResult<SourceTokenizedLine>(lines, model.LineCount);
   }
 

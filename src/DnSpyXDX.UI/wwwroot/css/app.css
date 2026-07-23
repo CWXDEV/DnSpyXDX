@@ -132,12 +132,22 @@ select{appearance:none;color-scheme:dark;height:27px;border:1px solid var(--them
 .source-token{margin:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;line-height:inherit;white-space:pre;text-align:left;vertical-align:baseline}
 button.source-token.code-link{text-decoration:none}
 .source-token.code-link:hover{background:var(--theme-color-264f78);box-shadow:inset 0 0 0 1px var(--theme-color-4e87c0)}
-.source-token.code-comment{color:var(--theme-color-647d69);font-style:italic}
-.source-token.code-type{color:var(--theme-color-f08bc6)}
-.source-token.code-method{color:var(--theme-color-dcdcaa)}
-.source-token.code-field{color:var(--theme-color-c586c0)}
-.source-token.code-number{color:var(--theme-color-b5cea8)}
+.source-token.code-comment{color:var(--theme-syntax-comment);font-style:italic}
+.source-token.code-type{color:var(--theme-syntax-class)}
+.source-token.code-static-type{color:var(--theme-syntax-static-class)}
+.source-token.code-interface{color:var(--theme-syntax-interface)}
+.source-token.code-enum{color:var(--theme-syntax-enum)}
+.source-token.code-struct{color:var(--theme-syntax-struct)}
+.source-token.code-delegate{color:var(--theme-syntax-delegate)}
+.source-token.code-type-param{color:var(--theme-syntax-typeparam)}
+.source-token.code-method{color:var(--theme-syntax-method)}
+.source-token.code-field{color:var(--theme-syntax-field)}
+.source-token.code-property{color:var(--theme-syntax-property)}
+.source-token.code-event{color:var(--theme-syntax-event)}
+.source-token.code-namespace{color:var(--theme-syntax-namespace)}
+.source-token.code-number{color:var(--theme-syntax-number)}
 .source-token.code-keyword{color:var(--theme-syntax-keyword)}
+.source-token.code-control{color:var(--theme-syntax-control)}
 .source-token.code-name{color:var(--theme-syntax-variable)}
 .source-token.code-constant{color:var(--theme-syntax-constant)}
 .source-token.code-visibility{color:var(--theme-syntax-visibility)}
@@ -182,12 +192,25 @@ button.source-token.code-link{text-decoration:none}
 .settings-checkbox{width:17px;height:17px;accent-color:var(--theme-color-7968ff)}
 .settings-select{min-width:130px}
 
-:root{--theme-syntax-keyword:var(--theme-color-569cd6);--theme-syntax-variable:var(--theme-color-d4d4d4);--theme-syntax-constant:var(--theme-color-569cd6);--theme-syntax-visibility:var(--theme-color-569cd6);--theme-syntax-standard-type:var(--theme-color-569cd6);--theme-syntax-string:var(--theme-color-ce9178)}
-[data-theme="rider-dark"]{--theme-syntax-keyword:#6c95eb;--theme-syntax-variable:#bdbdbd;--theme-syntax-constant:#6c95eb;--theme-syntax-visibility:#6c95eb;--theme-syntax-standard-type:#6c95eb;--theme-syntax-string:#b18a57}
-[data-theme="vs-dark"]{--theme-syntax-keyword:#c586c0;--theme-syntax-variable:#9cdcfe;--theme-syntax-constant:#569cd6;--theme-syntax-visibility:#569cd6;--theme-syntax-standard-type:#569cd6;--theme-syntax-string:#ce9178}
+/* Semantic syntax palette. The default theme mirrors dnSpy's stock dark colors (class teal,
+   interface olive, enum light-green, struct green, delegate cyan, method orange, field violet);
+   rider-dark and vs-dark override each token to match those editors. */
+:root{--theme-syntax-keyword:#569cd6;--theme-syntax-control:#569cd6;--theme-syntax-variable:#dcdcdc;--theme-syntax-constant:#569cd6;--theme-syntax-visibility:#569cd6;--theme-syntax-standard-type:#569cd6;--theme-syntax-string:#d69d85;--theme-syntax-comment:#57a64a;--theme-syntax-number:#b5cea8;--theme-syntax-class:#4ec9b0;--theme-syntax-interface:#9b9b82;--theme-syntax-enum:#b8d7a3;--theme-syntax-struct:#009933;--theme-syntax-delegate:#33ccff;--theme-syntax-method:#ff8000;--theme-syntax-field:#aa70ff;--theme-syntax-property:#248f8f;--theme-syntax-event:#cc6699;--theme-syntax-namespace:#d7ba7d;--theme-syntax-static-class:#378d7b;--theme-syntax-typeparam:#4b8595}
+[data-theme="rider-dark"]{--theme-syntax-keyword:#6c95eb;--theme-syntax-control:#6c95eb;--theme-syntax-variable:#bdbdbd;--theme-syntax-constant:#6c95eb;--theme-syntax-visibility:#6c95eb;--theme-syntax-standard-type:#6c95eb;--theme-syntax-string:#b18a57;--theme-syntax-comment:#85c46c;--theme-syntax-number:#85c46c;--theme-syntax-class:#c191ff;--theme-syntax-interface:#9b9b82;--theme-syntax-enum:#b8d7a3;--theme-syntax-struct:#6dbf67;--theme-syntax-delegate:#40a5c5;--theme-syntax-method:#39cc9b;--theme-syntax-field:#c191ff;--theme-syntax-property:#bdbdbd;--theme-syntax-event:#bdbdbd;--theme-syntax-namespace:#c191ff;--theme-syntax-static-class:#a06fe0;--theme-syntax-typeparam:#9a7fd0}
+[data-theme="vs-dark"]{--theme-syntax-keyword:#569cd6;--theme-syntax-control:#c586c0;--theme-syntax-variable:#9cdcfe;--theme-syntax-constant:#569cd6;--theme-syntax-visibility:#569cd6;--theme-syntax-standard-type:#569cd6;--theme-syntax-string:#ce9178;--theme-syntax-comment:#608b4e;--theme-syntax-number:#b8d7a3;--theme-syntax-class:#4ec9b0;--theme-syntax-interface:#b8d7a3;--theme-syntax-enum:#b8d7a3;--theme-syntax-struct:#86c691;--theme-syntax-delegate:#4ec9b0;--theme-syntax-method:#dcdcaa;--theme-syntax-field:#9cdcfe;--theme-syntax-property:#9cdcfe;--theme-syntax-event:#9cdcfe;--theme-syntax-namespace:#d4d4d4;--theme-syntax-static-class:#3a9d8f;--theme-syntax-typeparam:#6fb5c9}
 .code-keyword{color:var(--theme-syntax-keyword)}
 .code-name{color:var(--theme-syntax-variable)}
 .code-constant{color:var(--theme-syntax-constant)}
 .code-visibility,.meta-visibility{color:var(--theme-syntax-visibility)}
 .code-standard-type,.meta-type-standard,.meta-type-keyword{color:var(--theme-syntax-standard-type)}
 .code-string{color:var(--theme-syntax-string)}
+/* Assembly tree type names share the source view's per-kind colors so a class, interface, enum,
+   struct and delegate read the same in the sidebar as in the decompiled source. */
+.meta-class{color:var(--theme-syntax-class)}
+.meta-staticclass{color:var(--theme-syntax-static-class)}
+.meta-interface{color:var(--theme-syntax-interface)}
+.meta-enum{color:var(--theme-syntax-enum)}
+.meta-struct{color:var(--theme-syntax-struct)}
+.meta-delegate{color:var(--theme-syntax-delegate)}
+.meta-typeparam{color:var(--theme-syntax-typeparam)}
+.meta-generic-punctuation{color:var(--theme-syntax-variable)}

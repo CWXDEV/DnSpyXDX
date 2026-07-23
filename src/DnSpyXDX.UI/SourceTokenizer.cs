@@ -13,9 +13,19 @@ public enum SourceTokenKind
     Visibility,
     BuiltInType,
     Constant,
+    ControlKeyword,
     Type,
+    StaticType,
+    Interface,
+    Enum,
+    Struct,
+    Delegate,
+    TypeParameter,
     Method,
     Field,
+    Property,
+    Event,
+    Namespace,
     Brace
 }
 
@@ -57,18 +67,26 @@ public static class SourceTokenizer
     private static readonly HashSet<string> Visibility = ["public", "private", "protected", "internal"];
     private static readonly HashSet<string> BuiltInTypes = ["bool", "byte", "char", "decimal", "double", "float", "int", "long", "object", "sbyte", "short", "string", "uint", "ulong", "ushort", "void", "dynamic"];
     private static readonly HashSet<string> Constants = ["false", "null", "true"];
+    // Flow-control keywords render in the "control" color (magenta in VS-style themes); the remaining
+    // declaration and modifier keywords stay in the plain keyword color, matching how VS/VS Code split
+    // keyword.control from the rest. dnSpy uses one keyword color, so both map to it there.
+    private static readonly HashSet<string> ControlKeywords = ["break", "case", "catch", "continue", "do", "else", "finally", "for", "foreach", "goto", "if", "in", "lock", "return", "switch", "throw", "try", "when", "while", "yield"];
     private static readonly HashSet<string> Keywords = ["abstract", "as", "async", "await", "base", "break", "case", "catch", "checked", "class", "const", "continue", "default", "delegate", "do", "else", "enum", "event", "explicit", "extern", "finally", "fixed", "for", "foreach", "get", "if", "implicit", "in", "interface", "is", "lock", "namespace", "new", "operator", "out", "override", "params", "readonly", "record", "ref", "required", "return", "sealed", "set", "sizeof", "stackalloc", "static", "struct", "switch", "this", "throw", "true", "try", "typeof", "unchecked", "unsafe", "using", "virtual", "volatile", "while", "yield"];
 
     public static (IReadOnlyList<SourceToken> Tokens, SourceTokenizerState EndState) Tokenize(
         string line,
         SourceTokenizerState state,
-        IReadOnlyDictionary<string, SymbolId?>? symbolLinks = null)
+        IReadOnlyDictionary<string, SymbolId?>? symbolLinks = null,
+        IReadOnlyDictionary<string, string>? typeKinds = null)
     {
         ArgumentNullException.ThrowIfNull(line);
         ArgumentNullException.ThrowIfNull(state);
         var tokens = new List<SourceToken>();
         var braces = state.Braces.ToList();
         var mode = state.Mode;
+        // On a using/namespace directive every dotted segment is a namespace, so they get the
+        // namespace color instead of falling through to the class color like any capitalized word.
+        var namespaceLine = IsDirectiveLine(line);
         var rawQuoteCount = state.RawQuoteCount;
         var nextBracePair = state.NextBracePair;
         var index = 0;
@@ -157,8 +175,8 @@ public static class SourceTokenizer
                 var end = index + (character == '@' ? 1 : 0) + 1;
                 while (end < line.Length && (char.IsLetterOrDigit(line[end]) || line[end] == '_')) end++;
                 var word = line[index..end];
-                var kind = ClassifyWord(line, word, end);
-                var isLinkable = kind is SourceTokenKind.Type or SourceTokenKind.Method or SourceTokenKind.Field or SourceTokenKind.Identifier;
+                var kind = ClassifyWord(line, word, end, typeKinds, namespaceLine);
+                var isLinkable = kind is SourceTokenKind.Type or SourceTokenKind.StaticType or SourceTokenKind.Interface or SourceTokenKind.Enum or SourceTokenKind.Struct or SourceTokenKind.Delegate or SourceTokenKind.Method or SourceTokenKind.Field or SourceTokenKind.Property or SourceTokenKind.Event or SourceTokenKind.Identifier;
                 SymbolId? target = null;
                 string? symbolName = null;
                 if (isLinkable && symbolLinks is not null && symbolLinks.TryGetValue(word, out var resolved))
@@ -209,18 +227,52 @@ public static class SourceTokenizer
     private static bool IsIdentifierStart(string line, int index) =>
         char.IsLetter(line[index]) || line[index] == '_' || line[index] == '@' && index + 1 < line.Length && (char.IsLetter(line[index + 1]) || line[index + 1] == '_');
 
-    private static SourceTokenKind ClassifyWord(string line, string word, int end)
+    private static SourceTokenKind ClassifyWord(string line, string word, int end, IReadOnlyDictionary<string, string>? typeKinds, bool namespaceLine)
     {
         if (Visibility.Contains(word)) return SourceTokenKind.Visibility;
         if (Constants.Contains(word)) return SourceTokenKind.Constant;
+        if (ControlKeywords.Contains(word)) return SourceTokenKind.ControlKeyword;
         if (Keywords.Contains(word)) return SourceTokenKind.Keyword;
+        if (namespaceLine) return SourceTokenKind.Namespace;
         var next = end;
         while (next < line.Length && char.IsWhiteSpace(line[next])) next++;
         if (next < line.Length && line[next] == '(') return SourceTokenKind.Method;
         if (BuiltInTypes.Contains(word)) return SourceTokenKind.BuiltInType;
+        // The metadata map tells types (class/interface/enum/struct/delegate) and the displayed
+        // type's own members (field/property/event) apart, so properties and PascalCase fields keep
+        // their member color instead of falling through to the class color like every capital word.
+        if (typeKinds is not null && typeKinds.TryGetValue(word.TrimStart('@'), out var kind)) return MapKind(kind);
         if (char.IsUpper(word.TrimStart('@')[0])) return SourceTokenKind.Type;
         return word.StartsWith('_') ? SourceTokenKind.Field : SourceTokenKind.Identifier;
     }
+
+    // A line is a namespace directive when its first word is using or namespace (optionally after a
+    // leading global). Segments after a using alias's '=' are still colored as namespaces, which is a
+    // deliberate simplification since aliases are rare in decompiled output.
+    private static bool IsDirectiveLine(string line)
+    {
+        var span = line.AsSpan().TrimStart();
+        if (StartsWithWord(span, "global")) span = span[6..].TrimStart();
+        return StartsWithWord(span, "using") || StartsWithWord(span, "namespace");
+    }
+
+    private static bool StartsWithWord(ReadOnlySpan<char> span, string word) =>
+        span.StartsWith(word, StringComparison.Ordinal) &&
+        (span.Length == word.Length || !char.IsLetterOrDigit(span[word.Length]) && span[word.Length] != '_');
+
+    private static SourceTokenKind MapKind(string kind) => kind switch
+    {
+        "staticclass" => SourceTokenKind.StaticType,
+        "interface" => SourceTokenKind.Interface,
+        "enum" => SourceTokenKind.Enum,
+        "struct" => SourceTokenKind.Struct,
+        "delegate" => SourceTokenKind.Delegate,
+        "typeparam" => SourceTokenKind.TypeParameter,
+        "field" => SourceTokenKind.Field,
+        "property" => SourceTokenKind.Property,
+        "event" => SourceTokenKind.Event,
+        _ => SourceTokenKind.Type
+    };
 
     private static int QuotedEnd(string line, int index, char quote)
     {

@@ -27,6 +27,97 @@ public sealed class SourceTokenizerTests
     }
 
     [Fact]
+    public void Refines_type_names_into_their_declared_kind()
+    {
+        const string line = "public Widget Build(IHandler handler, Mode mode, Callback done, Data data)";
+        var kinds = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["IHandler"] = "interface",
+            ["Mode"] = "enum",
+            ["Data"] = "struct",
+            ["Callback"] = "delegate"
+        };
+
+        var (tokens, _) = SourceTokenizer.Tokenize(line, SourceTokenizerState.Initial, Links, kinds);
+
+        Assert.Equal(SourceTokenKind.Type, Kind(tokens, "Widget", line));
+        Assert.Equal(SourceTokenKind.Interface, Kind(tokens, "IHandler", line));
+        Assert.Equal(SourceTokenKind.Enum, Kind(tokens, "Mode", line));
+        Assert.Equal(SourceTokenKind.Struct, Kind(tokens, "Data", line));
+        Assert.Equal(SourceTokenKind.Delegate, Kind(tokens, "Callback", line));
+    }
+
+    [Fact]
+    public void Distinguishes_static_classes_and_type_parameters()
+    {
+        const string line = "TResult Convert(Console console, TInput input)";
+        var kinds = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Console"] = "staticclass",
+            ["TResult"] = "typeparam",
+            ["TInput"] = "typeparam"
+        };
+
+        var (tokens, _) = SourceTokenizer.Tokenize(line, SourceTokenizerState.Initial, null, kinds);
+
+        Assert.Equal(SourceTokenKind.StaticType, Kind(tokens, "Console", line));
+        Assert.Equal(SourceTokenKind.TypeParameter, Kind(tokens, "TResult", line));
+        Assert.Equal(SourceTokenKind.TypeParameter, Kind(tokens, "TInput", line));
+    }
+
+    [Fact]
+    public void Colors_known_members_instead_of_falling_through_to_the_class_color()
+    {
+        const string line = "Name = Count + Handler;";
+        var kinds = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Name"] = "property",
+            ["Count"] = "field",
+            ["Handler"] = "event"
+        };
+
+        var (tokens, _) = SourceTokenizer.Tokenize(line, SourceTokenizerState.Initial, null, kinds);
+
+        Assert.Equal(SourceTokenKind.Property, Kind(tokens, "Name", line));
+        Assert.Equal(SourceTokenKind.Field, Kind(tokens, "Count", line));
+        Assert.Equal(SourceTokenKind.Event, Kind(tokens, "Handler", line));
+    }
+
+    [Fact]
+    public void Separates_modifier_keywords_from_control_flow_keywords()
+    {
+        const string declaration = "public abstract override string Run()";
+        const string flow = "if (ok) return; else foreach (x) throw;";
+        var (declarationTokens, _) = SourceTokenizer.Tokenize(declaration, SourceTokenizerState.Initial);
+        var (flowTokens, _) = SourceTokenizer.Tokenize(flow, SourceTokenizerState.Initial);
+
+        Assert.Equal(SourceTokenKind.Visibility, Kind(declarationTokens, "public", declaration));
+        Assert.Equal(SourceTokenKind.Keyword, Kind(declarationTokens, "abstract", declaration));
+        Assert.Equal(SourceTokenKind.Keyword, Kind(declarationTokens, "override", declaration));
+        Assert.Equal(SourceTokenKind.ControlKeyword, Kind(flowTokens, "if", flow));
+        Assert.Equal(SourceTokenKind.ControlKeyword, Kind(flowTokens, "return", flow));
+        Assert.Equal(SourceTokenKind.ControlKeyword, Kind(flowTokens, "else", flow));
+        Assert.Equal(SourceTokenKind.ControlKeyword, Kind(flowTokens, "throw", flow));
+    }
+
+    [Fact]
+    public void Colors_using_and_namespace_segments_as_namespaces()
+    {
+        const string usingLine = "using System.Collections.Generic;";
+        const string namespaceLine = "namespace DnSpyXDX.Tests;";
+        var (usingTokens, _) = SourceTokenizer.Tokenize(usingLine, SourceTokenizerState.Initial, Links);
+        var (namespaceTokens, _) = SourceTokenizer.Tokenize(namespaceLine, SourceTokenizerState.Initial, Links);
+
+        Assert.Equal(SourceTokenKind.Keyword, Kind(usingTokens, "using", usingLine));
+        Assert.Equal(SourceTokenKind.Namespace, Kind(usingTokens, "System", usingLine));
+        Assert.Equal(SourceTokenKind.Namespace, Kind(usingTokens, "Collections", usingLine));
+        Assert.Equal(SourceTokenKind.Namespace, Kind(usingTokens, "Generic", usingLine));
+        Assert.Equal(SourceTokenKind.Keyword, Kind(namespaceTokens, "namespace", namespaceLine));
+        Assert.Equal(SourceTokenKind.Namespace, Kind(namespaceTokens, "DnSpyXDX", namespaceLine));
+        Assert.Equal(SourceTokenKind.Namespace, Kind(namespaceTokens, "Tests", namespaceLine));
+    }
+
+    [Fact]
     public void Does_not_resolve_names_in_comments_or_strings()
     {
         var (comment, _) = SourceTokenizer.Tokenize("// AudioSource", SourceTokenizerState.Initial, Links);

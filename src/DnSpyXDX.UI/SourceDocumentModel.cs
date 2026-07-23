@@ -113,6 +113,7 @@ public sealed partial class SourceDocumentModel
         int startLine,
         int count,
         IReadOnlyDictionary<string, SymbolId?>? symbolLinks = null,
+        IReadOnlyDictionary<string, string>? typeKinds = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(startLine);
@@ -138,7 +139,7 @@ public sealed partial class SourceDocumentModel
                     var line = GetLine(lineNumber);
                     var text = line.GetText(Text).ToString();
                     var startState = state;
-                    var tokenized = SourceTokenizer.Tokenize(text, state, symbolLinks);
+                    var tokenized = SourceTokenizer.Tokenize(text, state, symbolLinks, typeKinds);
                     state = tokenized.EndState;
                     if (lineNumber >= startLine)
                         result.Add(new SourceTokenizedLine(lineNumber, line.StartOffset, text, tokenized.Tokens, startState, state));

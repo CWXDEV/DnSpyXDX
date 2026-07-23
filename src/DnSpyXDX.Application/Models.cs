@@ -46,7 +46,8 @@ public sealed record DecompilerDocument(
     IReadOnlyList<ReferenceSpan> References,
     IReadOnlyList<DiagnosticMessage> Diagnostics,
     IReadOnlyDictionary<string, SymbolId?>? SymbolLinks = null,
-    SymbolId? FocusSymbol = null);
+    SymbolId? FocusSymbol = null,
+    IReadOnlyDictionary<string, string>? TypeClassifications = null);
 
 public sealed record SearchResult(SymbolId Symbol, string Name, string Kind, string AssemblyName, string Namespace, SymbolId DeclaringType, string? QualifiedName = null);
 
