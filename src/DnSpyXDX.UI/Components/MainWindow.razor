@@ -11,7 +11,7 @@
 <div class="app-shell">
   <header class="toolbar">
     <div class="app-menu">
-      <button class="hamburger" title="Application menu" aria-label="Application menu" @onclick="ToggleMenu"><span></span><span></span><span></span></button>
+      <button type="button" class="hamburger" title="Application menu" aria-label="Application menu" aria-expanded="@menuOpen" @onclick="ToggleMenu" @onclick:stopPropagation><span></span><span></span><span></span></button>
       @if (menuOpen) {
         <div class="menu-dismiss" @onclick="CloseMenu"></div>
         <div class="menu-popup">

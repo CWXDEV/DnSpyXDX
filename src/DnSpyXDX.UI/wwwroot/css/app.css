@@ -78,7 +78,7 @@
 
 /* Compact application menu */
 .app-shell{grid-template-rows:42px 1fr 26px}
-.toolbar{height:42px;padding:0 8px}
+.toolbar{position:relative;z-index:50;height:42px;padding:0 8px;overflow:visible}
 .app-menu{position:relative}
 .hamburger{position:relative;z-index:102;width:31px;height:29px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0!important;background:transparent!important;border-color:transparent!important}
 .hamburger:hover{background:#252d3c!important;border-color:#354157!important}.hamburger span{display:block;width:15px;height:1.5px;background:#c8d2e2;border-radius:2px}
