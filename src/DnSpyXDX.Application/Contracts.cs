@@ -8,6 +8,7 @@ public interface IDecompilerBackend : IAsyncDisposable
     Task CloseAsync(Guid sessionId);
     Task<IReadOnlyList<TreeNodeDescriptor>> GetChildrenAsync(NodeId parent, CancellationToken cancellationToken = default);
     Task<DecompilerDocument> DecompileAsync(SymbolId symbol, CancellationToken cancellationToken = default);
+    Task<SymbolId> GetDeclaringTypeAsync(SymbolId symbol, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<NodeId>> GetPathAsync(SymbolId symbol, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default);
     bool TryGetAssembly(Guid sessionId, out AssemblyDescriptor? assembly);

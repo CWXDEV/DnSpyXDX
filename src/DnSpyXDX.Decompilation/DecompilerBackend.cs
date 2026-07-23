@@ -65,6 +65,13 @@ public sealed class DecompilerBackend : IDecompilerBackend
         return Task.Run(() => session.GetPath(symbol, cancellationToken), cancellationToken);
     }
 
+    public Task<SymbolId> GetDeclaringTypeAsync(SymbolId symbol, CancellationToken cancellationToken = default)
+    {
+        var session = sessions.Values.FirstOrDefault(s => s.Descriptor.ModuleMvid == symbol.ModuleMvid)
+            ?? throw new KeyNotFoundException("The symbol's assembly is no longer open.");
+        return Task.Run(() => session.GetDeclaringType(symbol, cancellationToken), cancellationToken);
+    }
+
     public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default) => Task.Run<IReadOnlyList<SearchResult>>(() =>
     {
         if (string.IsNullOrWhiteSpace(query)) return [];
@@ -532,6 +539,14 @@ internal sealed class AssemblySession : IDisposable
         while (chain.Count > 0) { var type = chain.Pop(); path.Add(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(type):X8}")); }
         if (handle.Kind != HandleKind.TypeDefinition) path.Add(new NodeId(Descriptor.SessionId, $"member:{symbol.MetadataToken:X8}"));
         return path;
+    }
+
+    public SymbolId GetDeclaringType(SymbolId symbol, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var type = DeclaringTypeOf(MetadataTokens.EntityHandle(symbol.MetadataToken));
+        if (type.IsNil) throw new ArgumentException("The symbol is not declared by a type.", nameof(symbol));
+        return new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(type));
     }
 
     private TypeDefinitionHandle FindPropertyDeclaringType(PropertyDefinitionHandle target) => metadata.TypeDefinitions.FirstOrDefault(t => metadata.GetTypeDefinition(t).GetProperties().Contains(target));

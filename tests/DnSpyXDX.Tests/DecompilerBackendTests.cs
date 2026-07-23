@@ -126,6 +126,7 @@ public sealed class DecompilerBackendTests
         Assert.Equal("GenericSample<TItem>", searchResult.Name);
         Assert.Equal(genericType.Symbol, searchResult.DeclaringType);
         Assert.Equal(genericType.Symbol, fieldSearchResult.DeclaringType);
+        Assert.Equal(genericType.Symbol, await backend.GetDeclaringTypeAsync(fieldSearchResult.Symbol));
         Assert.Equal("GenericSample<TItem>", document.Title);
     }
 

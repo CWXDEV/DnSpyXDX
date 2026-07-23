@@ -265,7 +265,16 @@
     await OpenSymbolAsync(result.DeclaringType, newTab || Workspace.Tabs.Count == 0, result.Kind == "Type" ? result.Name : null, true, result.Kind == "Type" ? null : result.Symbol);
     StateHasChanged();
   }
-  private async Task NavigateFromSourceAsync(NavigationRequest request) { if (request.Symbol == selectedSymbol && !request.NewTab) return; revealedPath = (await Backend.GetPathAsync(request.Symbol)).ToHashSet(); await OpenSymbolAsync(request.Symbol, request.NewTab, request.DisplayName, request.Kind == TreeNodeKind.Type); StateHasChanged(); }
+  private async Task NavigateFromSourceAsync(NavigationRequest request)
+  {
+    var declaringType = await Backend.GetDeclaringTypeAsync(request.Symbol);
+    revealedPath = (await Backend.GetPathAsync(declaringType)).ToHashSet();
+    selectedSymbol = declaringType;
+    selectedNode = null;
+    treeSelectionVersion++;
+    await OpenSymbolAsync(declaringType, request.NewTab, IsTypeSymbol(request.Symbol) ? request.DisplayName : null, true, IsTypeSymbol(request.Symbol) ? null : request.Symbol);
+    StateHasChanged();
+  }
   private void TabMouseUp(MouseEventArgs e, string id) { if (e.Button == 1) CloseTab(id); }
   private static bool IsTypeSymbol(SymbolId symbol) => (symbol.MetadataToken >> 24) == 0x02;
   private async Task DecompileTypeIntoTabAsync(string tabId, SymbolId symbol, SymbolId? focusSymbol, CancellationTokenSource cancellation)
