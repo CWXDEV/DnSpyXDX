@@ -27,10 +27,13 @@ internal static class Program
         builder.Services.AddSingleton<IWorkspaceSessionService, WorkspaceSessionService>();
         var zoomService = new PhotinoZoomService();
         builder.Services.AddSingleton<IApplicationZoomService>(zoomService);
+        var applicationLifetime = new PhotinoApplicationLifetime();
+        builder.Services.AddSingleton<IApplicationLifetime>(applicationLifetime);
         builder.RootComponents.Add<App>("app");
         var app = builder.Build();
         app.MainWindow.SetLogVerbosity(0).SetTitle("DnSpyXDX").SetIconFile(Path.Combine(AppContext.BaseDirectory, "wwwroot", "dnspyxdx.png")).SetSize(1320, 840).SetMinSize(860, 560).SetUseOsDefaultSize(false);
         zoomService.Attach(app.MainWindow);
+        applicationLifetime.Attach(app.MainWindow);
         WindowStateManager.Attach(app.MainWindow);
         app.Run();
     }

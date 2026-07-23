@@ -119,37 +119,6 @@ window.dnSpyXdx.initHistoryButtons = function (dotNet) {
     dotNet.invokeMethodAsync("NavigateHistory", event.key === "ArrowRight");
   });
 };
-window.dnSpyXdx.initApplicationZoom = function (dotNet) {
-  if (window.dnSpyXdx.applicationZoomReady) return;
-  window.dnSpyXdx.applicationZoomReady = true;
-  let wheelDelta = 0;
-  let lastWheelChange = 0;
-  window.addEventListener("wheel", event => {
-    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-    event.preventDefault();
-    wheelDelta += event.deltaY;
-    const now = performance.now();
-    if (Math.abs(wheelDelta) < 20 || now - lastWheelChange < 80) return;
-    dotNet.invokeMethodAsync("ChangeApplicationZoom", wheelDelta < 0 ? 1 : -1);
-    wheelDelta = 0;
-    lastWheelChange = now;
-  }, { passive: false });
-  window.addEventListener("keydown", event => {
-    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-    if (event.key === "0") {
-      event.preventDefault();
-      dotNet.invokeMethodAsync("ResetApplicationZoom");
-    }
-    else if (event.key === "+" || event.key === "=") {
-      event.preventDefault();
-      dotNet.invokeMethodAsync("ChangeApplicationZoom", 1);
-    }
-    else if (event.key === "-" || event.key === "_") {
-      event.preventDefault();
-      dotNet.invokeMethodAsync("ChangeApplicationZoom", -1);
-    }
-  });
-};
 window.dnSpyXdx.scrollSourceToTop = function (source) {
   if (source) source.scrollTop = 0;
 };

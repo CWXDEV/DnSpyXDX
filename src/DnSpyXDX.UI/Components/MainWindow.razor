@@ -6,6 +6,7 @@
 @inject IJSRuntime JS
 @inject IWorkspaceSessionService Session
 @inject IApplicationZoomService Zoom
+@inject IApplicationLifetime ApplicationLifetime
 
 <div class="app-shell">
   <header class="toolbar">
@@ -18,6 +19,9 @@
           <button @onclick="OpenFromMenuAsync" disabled="@Workspace.IsBusy"><span>Open assembly</span></button>
           <button @onclick="ExportFromMenuAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Extract solution</span></button>
           <button @onclick="UnloadAllAsync" disabled="@(Workspace.IsBusy || Backend.Assemblies.Count == 0)"><span>Unload all assemblies</span></button>
+          <div class="menu-separator" role="separator"></div>
+          <button @onclick="OpenSettings"><span>Settings</span></button>
+          <button @onclick="Exit"><span>Exit</span></button>
         </div>
       }
     </div>
@@ -28,11 +32,6 @@
     <button class="toolbar-icon search-toolbar-button @(searchOpen ? "active" : null)" title="@(searchOpen ? "Close search" : "Open search")" aria-label="@(searchOpen ? "Close search" : "Open search")" aria-pressed="@searchOpen" disabled="@(Backend.Assemblies.Count == 0)" @onclick="ToggleSearchPanel">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.5 15.5 5 5"></path></svg>
     </button>
-    <div class="application-zoom" aria-label="Application zoom">
-      <button title="Zoom out (Ctrl+-)" aria-label="Zoom out" disabled="@(zoomPercent <= MinimumZoom)" @onclick="() => ChangeApplicationZoom(-1)">−</button>
-      <button class="zoom-percent" title="Reset zoom to 100% (Ctrl+0)" aria-label="Reset zoom to 100%" @onclick="ResetApplicationZoom">@zoomPercent%</button>
-      <button title="Zoom in (Ctrl++)" aria-label="Zoom in" disabled="@(zoomPercent >= MaximumZoom)" @onclick="() => ChangeApplicationZoom(1)">+</button>
-    </div>
   </header>
   <main>
     <div class="explorer-pane" @ref="explorer" style="width:@($"{explorerWidth}px")">
@@ -89,6 +88,14 @@
       <button disabled="@Workspace.IsBusy" @onclick="UnloadContextAssemblyAsync"><span>Unload assembly</span></button>
     </div>
   }
+  @if (settingsOpen)
+  {
+    <div class="modal-dismiss" @onclick="CloseSettings"></div>
+    <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header><strong id="settings-title">Settings</strong><button title="Close settings" aria-label="Close settings" @onclick="CloseSettings">×</button></header>
+      <div class="settings-row"><span><strong>Application zoom</strong><small>Scale the entire interface</small></span><div class="application-zoom"><button aria-label="Zoom out" disabled="@(zoomPercent <= MinimumZoom)" @onclick="() => ChangeApplicationZoom(-1)">−</button><button class="zoom-percent" aria-label="Reset zoom to 100%" @onclick="ResetApplicationZoom">@zoomPercent%</button><button aria-label="Zoom in" disabled="@(zoomPercent >= MaximumZoom)" @onclick="() => ChangeApplicationZoom(1)">+</button></div></div>
+    </section>
+  }
 </div>
 
 @code {
@@ -108,6 +115,7 @@
   private string searchKind = "All";
   private string searchScope = "All";
   private bool menuOpen;
+  private bool settingsOpen;
   private bool focusSearch;
   private ElementReference searchInput;
   private double explorerWidth = 300;
@@ -150,13 +158,16 @@
       Workspace.SetBusy(false, Backend.Assemblies.Count > 0 ? "Session restored" : "Ready");
     }
   }
-  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initApplicationZoom", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
+  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
   private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
   private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
   private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
   private async Task OpenAsync() { var path = await Dialogs.OpenAssemblyAsync(); if (path is null) return; Workspace.SetBusy(true, "Opening assembly…"); try { await Backend.OpenAsync(path); Workspace.SetBusy(false, $"Opened {Path.GetFileName(path)}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private void ToggleMenu() => menuOpen = !menuOpen;
   private void CloseMenu() => menuOpen = false;
+  private void OpenSettings() { menuOpen = false; settingsOpen = true; }
+  private void CloseSettings() => settingsOpen = false;
+  private void Exit() { menuOpen = false; ApplicationLifetime.Exit(); }
   private async Task OpenFromMenuAsync() { menuOpen = false; await OpenAsync(); }
   private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
@@ -267,7 +278,7 @@
   private void CollapseAllNodes() => treeCollapseVersion++;
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
   [JSInvokable] public void SearchPanelResized(double height) { searchPanelHeight = height; ScheduleSave(); }
-  [JSInvokable] public void ChangeApplicationZoom(int direction)
+  private void ChangeApplicationZoom(int direction)
   {
     var next = Math.Clamp(zoomPercent + Math.Sign(direction) * ZoomStep, MinimumZoom, MaximumZoom);
     if (next == zoomPercent) return;
@@ -276,7 +287,7 @@
     ScheduleSave();
     StateHasChanged();
   }
-  [JSInvokable] public void ResetApplicationZoom()
+  private void ResetApplicationZoom()
   {
     if (zoomPercent == 100) return;
     zoomPercent = 100;

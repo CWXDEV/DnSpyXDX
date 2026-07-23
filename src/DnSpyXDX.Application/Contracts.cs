@@ -37,3 +37,8 @@ public interface IApplicationZoomService
     int ZoomPercent { get; }
     void SetZoom(int percent);
 }
+
+public interface IApplicationLifetime
+{
+    void Exit();
+}
