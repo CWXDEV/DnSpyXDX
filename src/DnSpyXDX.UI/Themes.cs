@@ -9,7 +9,8 @@ public static class Themes
     public static IReadOnlyList<ThemeDescriptor> All { get; } =
     [
         new(DefaultId, "Default"),
-        new("rider-dark", "Rider Dark")
+        new("rider-dark", "Rider Dark"),
+        new("vs-dark", "VS Dark")
     ];
 
     public static string Normalize(string? id) =>
