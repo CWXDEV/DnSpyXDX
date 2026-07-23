@@ -14,12 +14,16 @@ internal static class Program
     private static void Main(string[] args)
     {
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
+        var loggingSettings = new RuntimeLoggingSettings();
         builder.Services.AddLogging(logging =>
         {
             logging.ClearProviders();
             logging.AddConsole();
-            logging.AddFilter((category, _) => category?.StartsWith("DnSpyXDX", StringComparison.Ordinal) == true);
+            logging.AddFilter((category, level) =>
+                category?.StartsWith("DnSpyXDX", StringComparison.Ordinal) == true &&
+                (level >= LogLevel.Information || loggingSettings.DebugEnabled));
         });
+        builder.Services.AddSingleton(loggingSettings);
         builder.Services.AddSingleton<IDecompilerBackend, DecompilerBackend>();
         builder.Services.AddSingleton<IProjectExportService, ProjectExportService>();
         builder.Services.AddSingleton<WorkspaceState>();

@@ -7,22 +7,25 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly SemaphoreSlim gate = new(1, 1);
+    private SessionSnapshot? pendingRestore;
     public UiSessionState UiState { get; set; } = new();
     private string SessionPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DnSpyXDX", "session.json");
 
-    public async Task RestoreAsync(CancellationToken cancellationToken = default)
+    public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
         if (!File.Exists(SessionPath)) return;
-        SessionSnapshot? snapshot;
         try
         {
             await using var stream = File.OpenRead(SessionPath);
-            snapshot = await JsonSerializer.DeserializeAsync<SessionSnapshot>(stream, JsonOptions, cancellationToken);
+            pendingRestore = await JsonSerializer.DeserializeAsync<SessionSnapshot>(stream, JsonOptions, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return; }
-        if (snapshot is null) return;
-        UiState = snapshot.UiState ?? new UiSessionState();
+        UiState = pendingRestore?.UiState ?? new UiSessionState();
+    }
 
+    public async Task RestoreAssembliesAsync(CancellationToken cancellationToken = default)
+    {
+        if (pendingRestore is not { } snapshot) return;
         foreach (var path in snapshot.AssemblyPaths.Distinct(PathComparer()))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -30,20 +33,33 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
             try { await backend.OpenAsync(path, cancellationToken); }
             catch (Exception ex) when (ex is not OperationCanceledException) { }
         }
+    }
+
+    public async Task RestoreDocumentsAsync(CancellationToken cancellationToken = default)
+    {
+        if (pendingRestore is not { } snapshot) return;
+        var documents = new List<(SavedDocument Saved, string TabId)>();
         foreach (var saved in snapshot.Documents)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!backend.Assemblies.Any(a => a.ModuleMvid == saved.Symbol.ModuleMvid)) continue;
+            var assembly = backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == saved.Symbol.ModuleMvid);
+            if (assembly is null) continue;
+            var title = string.IsNullOrWhiteSpace(saved.Title) ? $"0x{saved.Symbol.MetadataToken:X8}" : saved.Title;
+            documents.Add((saved, workspace.OpenLoading(saved.Symbol, title, saved.AssemblyName ?? assembly.Name, newTab: true)));
+        }
+        if (workspace.Tabs.ElementAtOrDefault(snapshot.ActiveIndex) is { } active) workspace.Activate(active.Id);
+
+        foreach (var (saved, tabId) in documents)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var document = await backend.DecompileAsync(saved.Symbol, cancellationToken);
-                var assembly = backend.Assemblies.First(a => a.ModuleMvid == saved.Symbol.ModuleMvid);
-                workspace.Open(document, assembly.Name, newTab: true);
+                workspace.CompleteLoading(tabId, document);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException) { }
+            catch (Exception ex) when (ex is not OperationCanceledException) { workspace.FailLoading(tabId, ex.Message); }
         }
-        // Tab ids are generated per run, so the active tab is restored by position.
-        if (workspace.Tabs.ElementAtOrDefault(snapshot.ActiveIndex) is { } active) workspace.Activate(active.Id);
+        pendingRestore = null;
     }
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
@@ -53,7 +69,7 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
         {
             var snapshot = new SessionSnapshot(
                 backend.Assemblies.Select(a => a.Path).ToArray(),
-                workspace.Tabs.Where(t => !t.IsLoading && t.Error is null).Select(t => new SavedDocument(t.Document.Symbol)).ToArray(),
+                workspace.Tabs.Where(t => !t.IsLoading && t.Error is null).Select(t => new SavedDocument(t.Document.Symbol, t.Title, t.AssemblyName)).ToArray(),
                 workspace.Tabs.ToList().FindIndex(t => t.Id == workspace.ActiveTabId),
                 UiState);
             var directory = Path.GetDirectoryName(SessionPath)!;
@@ -67,5 +83,5 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
 
     private static StringComparer PathComparer() => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private sealed record SessionSnapshot(string[] AssemblyPaths, SavedDocument[] Documents, int ActiveIndex, UiSessionState? UiState = null);
-    private sealed record SavedDocument(SymbolId Symbol);
+    private sealed record SavedDocument(SymbolId Symbol, string? Title = null, string? AssemblyName = null);
 }

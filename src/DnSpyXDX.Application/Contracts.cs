@@ -28,7 +28,9 @@ public interface IFileDialogService
 public interface IWorkspaceSessionService
 {
     UiSessionState UiState { get; set; }
-    Task RestoreAsync(CancellationToken cancellationToken = default);
+    Task LoadAsync(CancellationToken cancellationToken = default);
+    Task RestoreAssembliesAsync(CancellationToken cancellationToken = default);
+    Task RestoreDocumentsAsync(CancellationToken cancellationToken = default);
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
 
@@ -42,4 +44,14 @@ public interface IApplicationZoomService
 public interface IApplicationLifetime
 {
     void Exit();
+}
+
+public sealed class RuntimeLoggingSettings
+{
+    private int debugEnabled;
+    public bool DebugEnabled
+    {
+        get => Volatile.Read(ref debugEnabled) != 0;
+        set => Volatile.Write(ref debugEnabled, value ? 1 : 0);
+    }
 }

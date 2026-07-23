@@ -9,6 +9,7 @@
 @inject IApplicationLifetime ApplicationLifetime
 @inject SourceViewStateStore SourceViewStates
 @inject SourcePresentationCache SourceCache
+@inject RuntimeLoggingSettings LoggingSettings
 
 <div class="app-shell">
   <header class="toolbar">
@@ -47,7 +48,7 @@
           </div>
         </header>
         <div class="explorer-tree">
-          @if (Backend.Assemblies.Count == 0) { <div class="empty">Open a managed .dll or .exe to begin.</div> }
+          @if (Backend.Assemblies.Count == 0) { <div class="empty">@(restoring ? "Restoring assembly tree…" : "Open a managed .dll or .exe to begin.")</div> }
           @foreach (var assembly in Backend.Assemblies) { <TreeNode @key="assembly.RootNode" Node="@(new TreeNodeDescriptor(assembly.RootNode, assembly.Name, TreeNodeKind.Assembly, true, Detail: assembly.TargetFramework))" Tooltip="@($"Loaded from: {Path.GetDirectoryName(assembly.Path)}")" OnOpen="OpenTreeSymbolAsync" OnOpenReference="OpenReferenceAsync" OnContextMenu="e => OpenAssemblyContextMenu(e, assembly)" ExpandedPath="revealedPath" SelectedSymbol="selectedSymbol" SelectedNode="selectedNode" SelectionVersion="treeSelectionVersion" CollapseVersion="treeCollapseVersion" /> }
         </div>
       </aside>
@@ -58,7 +59,8 @@
         @foreach (var tab in Workspace.Tabs) { <button class="tab @(Workspace.ActiveTabId == tab.Id ? "active" : null)" @onclick="() => Workspace.Activate(tab.Id)" @onmouseup="e => TabMouseUp(e, tab.Id)" @onmousedown:preventDefault="true"><span>@tab.Title</span><small>@(tab.IsLoading ? "Decompiling…" : tab.AssemblyName)</small><i @onclick:stopPropagation @onclick="() => CloseTab(tab.Id)">×</i></button> }
       </nav>
       <div class="document-content">
-        @if (Workspace.ActiveTab is { IsLoading: true } loading) { <div class="decompiling-panel"><span class="decompiling-spinner"></span><strong>Decompiling @loading.Title…</strong><small>Large types can take a moment. You can close this tab to cancel.</small></div> }
+        @if (restoring && Workspace.ActiveTab is null) { <div class="decompiling-panel"><span class="decompiling-spinner"></span><strong>Restoring session…</strong><small>Loading assemblies and rebuilding the assembly tree.</small></div> }
+        else if (Workspace.ActiveTab is { IsLoading: true } loading) { <div class="decompiling-panel"><span class="decompiling-spinner"></span><strong>Decompiling @loading.Title…</strong><small>Restoring saved source after the assembly tree has loaded.</small></div> }
         else if (Workspace.ActiveTab is { Error: not null } failed) { <div class="decompiling-panel error"><strong>Decompilation failed</strong><small>@failed.Error</small></div> }
         else if (Workspace.ActiveTab is { } active) { <SourceView TabId="active.Id" Document="active.Document" OnNavigate="NavigateFromSourceAsync" /> }
       </div>
@@ -97,6 +99,7 @@
       <header><strong id="settings-title">Settings</strong><button title="Close settings" aria-label="Close settings" @onclick="CloseSettings">×</button></header>
       <div class="settings-row"><span><strong>Theme</strong><small>Application and code colours</small></span><select class="settings-select" value="@themeId" @onchange="ThemeChangedAsync">@foreach (var theme in Themes.All) { <option value="@theme.Id">@theme.Name</option> }</select></div>
       <div class="settings-row"><span><strong>Application zoom</strong><small>Scale the entire interface</small></span><div class="application-zoom"><button aria-label="Zoom out" disabled="@(zoomPercent <= MinimumZoom)" @onclick="() => ChangeApplicationZoom(-1)">−</button><button class="zoom-percent" aria-label="Reset zoom to 100%" @onclick="ResetApplicationZoom">@zoomPercent%</button><button aria-label="Zoom in" disabled="@(zoomPercent >= MaximumZoom)" @onclick="() => ChangeApplicationZoom(1)">+</button></div></div>
+      <label class="settings-row"><span><strong>Debug logging</strong><small>Write detailed diagnostics to the console</small></span><input class="settings-checkbox" type="checkbox" checked="@debugLogging" @onchange="DebugLoggingChanged" /></label>
     </section>
   }
 </div>
@@ -131,19 +134,20 @@
   private const int ZoomStep = 10;
   private int zoomPercent = 100;
   private string themeId = Themes.DefaultId;
+  private bool debugLogging;
   private AssemblyDescriptor? contextAssembly;
   private int contextMenuX;
   private int contextMenuY;
   private DotNetObjectReference<MainWindow>? selfReference;
+  private bool sessionRestoreStarted;
   protected override async Task OnInitializedAsync()
   {
     Workspace.Changed += Refresh;
     restoring = true;
     Workspace.SetBusy(true, "Restoring session…");
-    var restored = false;
     try
     {
-      await Session.RestoreAsync();
+      await Session.LoadAsync();
       var ui = Session.UiState;
       explorerWidth = Math.Clamp(ui.ExplorerWidth, 190, 1200);
       searchPanelHeight = Math.Clamp(ui.SearchPanelHeight, 120, 900);
@@ -152,21 +156,11 @@
       searchScope = ui.SearchScope;
       zoomPercent = ui.ZoomPercent <= 0 ? 100 : Math.Clamp(ui.ZoomPercent, MinimumZoom, MaximumZoom);
       themeId = Themes.Normalize(ui.ThemeId);
+      debugLogging = ui.DebugLogging;
+      LoggingSettings.DebugEnabled = debugLogging;
       Zoom.SetZoom(zoomPercent);
-      if (Workspace.ActiveTab is { } active)
-      {
-        selectedSymbol = active.Document.Symbol;
-        try { revealedPath = (await Backend.GetPathAsync(active.Document.Symbol)).ToHashSet(); }
-        catch (Exception ex) { Workspace.SetBusy(true, $"Could not reveal restored document: {ex.Message}"); }
-      }
-      restored = true;
     }
-    catch (Exception ex) { Workspace.SetBusy(true, $"Session restore failed: {ex.Message}"); }
-    finally
-    {
-      restoring = false;
-      Workspace.SetBusy(false, restored && Backend.Assemblies.Count > 0 ? "Session restored" : restored ? "Ready" : "Session restore skipped");
-    }
+    catch (Exception ex) { restoring = false; Workspace.SetBusy(false, $"Session restore failed: {ex.Message}"); }
   }
   protected override async Task OnAfterRenderAsync(bool firstRender)
   {
@@ -183,6 +177,7 @@
         await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference);
         await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference);
         if (restoredFromStorage) { Session.UiState = CaptureUiState(); ScheduleSave(); StateHasChanged(); }
+        if (restoring && !sessionRestoreStarted) { sessionRestoreStarted = true; _ = RestoreWorkspaceAsync(); }
       }
       if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference);
       if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); }
@@ -190,8 +185,32 @@
     catch (Exception ex) { uiInitializationFailed = true; Workspace.SetBusy(false, $"UI initialization warning: {ex.Message}"); }
   }
   private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
+  private async Task RestoreWorkspaceAsync()
+  {
+    var restored = false;
+    try
+    {
+      await Session.RestoreAssembliesAsync();
+      await InvokeAsync(StateHasChanged);
+      await Session.RestoreDocumentsAsync();
+      if (Workspace.ActiveTab is { } active)
+      {
+        selectedSymbol = active.Document.Symbol;
+        try { revealedPath = (await Backend.GetPathAsync(active.Document.Symbol)).ToHashSet(); }
+        catch (Exception ex) { Workspace.SetBusy(true, $"Could not reveal restored document: {ex.Message}"); }
+      }
+      restored = true;
+    }
+    catch (Exception ex) { Workspace.SetBusy(true, $"Session restore failed: {ex.Message}"); }
+    finally
+    {
+      restoring = false;
+      Workspace.SetBusy(false, restored && Backend.Assemblies.Count > 0 ? "Session restored" : restored ? "Ready" : "Session restore skipped");
+      await InvokeAsync(StateHasChanged);
+    }
+  }
   private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
-  private UiSessionState CaptureUiState() => new(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent, themeId);
+  private UiSessionState CaptureUiState() => new(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent, themeId, debugLogging);
   private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = CaptureUiState(); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
   private async Task OpenAsync() { var path = await Dialogs.OpenAssemblyAsync(); if (path is null) return; Workspace.SetBusy(true, "Opening assembly…"); try { await Backend.OpenAsync(path); Workspace.SetBusy(false, $"Opened {Path.GetFileName(path)}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private void ToggleMenu() => menuOpen = !menuOpen;
@@ -333,6 +352,13 @@
   private async Task RunSearchAsync(CancellationToken token) { var found = await Backend.SearchAsync(query, token); token.ThrowIfCancellationRequested(); var selectedMvid = SelectedAssemblyMvid; results = found.Where(r => searchKind == "All" || r.Kind == searchKind).Where(r => searchScope == "All" || selectedMvid is not null && r.Symbol.ModuleMvid == selectedMvid).ToArray(); searchOpen = true; StateHasChanged(); }
   private void CloseSearch() { searchOpen = false; ScheduleSave(); StateHasChanged(); }
   private void LayoutOptionChanged() => ScheduleSave();
+  private async Task DebugLoggingChanged(ChangeEventArgs e)
+  {
+    debugLogging = e.Value is true;
+    LoggingSettings.DebugEnabled = debugLogging;
+    Session.UiState = CaptureUiState();
+    await Session.SaveAsync();
+  }
   private async Task ThemeChangedAsync(ChangeEventArgs e)
   {
     themeId = Themes.Normalize(e.Value?.ToString());

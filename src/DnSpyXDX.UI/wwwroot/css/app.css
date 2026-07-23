@@ -182,6 +182,7 @@ button.source-token.code-link{text-decoration:none}
 .explorer-tree{min-height:0;overflow-y:scroll;overflow-x:hidden;padding-bottom:20px}
 
 .settings-row+.settings-row{border-top:1px solid var(--theme-color-30394a)}
+.settings-checkbox{width:17px;height:17px;accent-color:var(--theme-color-7968ff)}
 .settings-select{min-width:130px}
 
 :root{--theme-syntax-keyword:var(--theme-color-569cd6);--theme-syntax-variable:var(--theme-color-d4d4d4);--theme-syntax-constant:var(--theme-color-569cd6);--theme-syntax-visibility:var(--theme-color-569cd6);--theme-syntax-standard-type:var(--theme-color-569cd6);--theme-syntax-string:var(--theme-color-ce9178)}

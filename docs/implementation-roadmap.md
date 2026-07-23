@@ -19,6 +19,15 @@ Status was audited against the repository on 2026-07-23 through commit `6621710`
 
 A realistic read-only MVP is approximately **6–10 weeks** for one developer. Semantic source hyperlinks and reliable multi-project export are the two areas most likely to move the schedule.
 
+## Immediate performance phase
+
+Before language modes, profile the current decompilation path against dnSpy using the same
+assemblies and hardware. Measure assembly resolution, ILSpy transforms, source generation,
+symbol-link construction, presentation indexing/tokenization, and first interactive paint as
+separate stages. Add debug-gated structured timings and representative regression benchmarks,
+then optimize the measured bottleneck. The exit condition is documented cold/warm baselines and
+budgets for time to source text and time to first interactive viewport.
+
 ## First implementation backlog
 
 Build these tickets in order. Checked items are supported by concrete production code and, where practical, tests; partial items remain unchecked.
