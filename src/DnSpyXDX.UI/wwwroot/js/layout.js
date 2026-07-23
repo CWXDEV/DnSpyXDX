@@ -1,6 +1,11 @@
 window.dnSpyXdx = window.dnSpyXdx || {};
+window.dnSpyXdx.getStoredTheme = function () {
+  try { return localStorage.getItem("dnspyxdx.theme"); } catch { return null; }
+};
 window.dnSpyXdx.applyTheme = function (theme) {
-  document.documentElement.dataset.theme = theme || "default";
+  const selected = theme || "default";
+  document.documentElement.dataset.theme = selected;
+  try { localStorage.setItem("dnspyxdx.theme", selected); } catch { }
 };
 window.dnSpyXdx.initExplorerResize = function (explorer, dotNet) {
   if (!explorer || explorer.dataset.resizeReady) return;

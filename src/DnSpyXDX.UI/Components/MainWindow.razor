@@ -118,6 +118,7 @@
   private bool menuOpen;
   private bool settingsOpen;
   private bool focusSearch;
+  private bool uiInitializationFailed;
   private ElementReference searchInput;
   private double explorerWidth = 300;
   private double searchPanelHeight = 230;
@@ -137,6 +138,7 @@
     Workspace.Changed += Refresh;
     restoring = true;
     Workspace.SetBusy(true, "Restoring session…");
+    var restored = false;
     try
     {
       await Session.RestoreAsync();
@@ -152,25 +154,55 @@
       if (Workspace.ActiveTab is { } active)
       {
         selectedSymbol = active.Document.Symbol;
-        revealedPath = (await Backend.GetPathAsync(active.Document.Symbol)).ToHashSet();
+        try { revealedPath = (await Backend.GetPathAsync(active.Document.Symbol)).ToHashSet(); }
+        catch (Exception ex) { Workspace.SetBusy(true, $"Could not reveal restored document: {ex.Message}"); }
       }
+      restored = true;
     }
+    catch (Exception ex) { Workspace.SetBusy(true, $"Session restore failed: {ex.Message}"); }
     finally
     {
       restoring = false;
-      Workspace.SetBusy(false, Backend.Assemblies.Count > 0 ? "Session restored" : "Ready");
+      Workspace.SetBusy(false, restored && Backend.Assemblies.Count > 0 ? "Session restored" : restored ? "Ready" : "Session restore skipped");
     }
   }
-  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.applyTheme", themeId); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (uiInitializationFailed) return;
+    try
+    {
+      if (firstRender)
+      {
+        selfReference = DotNetObjectReference.Create(this);
+        var storedTheme = await JS.InvokeAsync<string?>("dnSpyXdx.getStoredTheme");
+        var restoredFromStorage = !string.IsNullOrWhiteSpace(storedTheme) && Themes.Normalize(storedTheme) != themeId;
+        if (restoredFromStorage) themeId = Themes.Normalize(storedTheme);
+        await JS.InvokeVoidAsync("dnSpyXdx.applyTheme", themeId);
+        await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference);
+        await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference);
+        if (restoredFromStorage) { Session.UiState = CaptureUiState(); ScheduleSave(); StateHasChanged(); }
+      }
+      if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference);
+      if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); }
+    }
+    catch (Exception ex) { uiInitializationFailed = true; Workspace.SetBusy(false, $"UI initialization warning: {ex.Message}"); }
+  }
   private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
   private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
-  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent, themeId); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
+  private UiSessionState CaptureUiState() => new(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent, themeId);
+  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = CaptureUiState(); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
   private async Task OpenAsync() { var path = await Dialogs.OpenAssemblyAsync(); if (path is null) return; Workspace.SetBusy(true, "Opening assembly…"); try { await Backend.OpenAsync(path); Workspace.SetBusy(false, $"Opened {Path.GetFileName(path)}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private void ToggleMenu() => menuOpen = !menuOpen;
   private void CloseMenu() => menuOpen = false;
   private void OpenSettings() { menuOpen = false; settingsOpen = true; }
   private void CloseSettings() => settingsOpen = false;
-  private void Exit() { menuOpen = false; ApplicationLifetime.Exit(); }
+  private async Task Exit()
+  {
+    menuOpen = false;
+    Session.UiState = CaptureUiState();
+    await Session.SaveAsync();
+    ApplicationLifetime.Exit();
+  }
   private async Task OpenFromMenuAsync() { menuOpen = false; await OpenAsync(); }
   private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
@@ -282,7 +314,8 @@
   {
     themeId = Themes.Normalize(e.Value?.ToString());
     await JS.InvokeVoidAsync("dnSpyXdx.applyTheme", themeId);
-    ScheduleSave();
+    Session.UiState = CaptureUiState();
+    await Session.SaveAsync();
   }
   private void CollapseAllNodes() => treeCollapseVersion++;
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
