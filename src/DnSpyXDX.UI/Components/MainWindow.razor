@@ -68,10 +68,10 @@
         <section class="search-panel" @ref="searchPanel" style="height:@($"{searchPanelHeight}px")">
           <div class="search-resizer" title="Drag to resize search results"></div>
           <header><strong>Search</strong><input @ref="searchInput" @bind="query" @bind:event="oninput" @bind:after="QueueSearch" @onkeydown="SearchKey" placeholder="Type or member name…" /><select @bind="searchKind" @bind:after="LayoutOptionChanged" title="Member type"><option value="All">All members</option><option value="Type">Types</option><option value="Method">Methods</option><option value="Field">Fields</option><option value="Property">Properties</option><option value="Event">Events</option></select><select @bind="searchScope" @bind:after="LayoutOptionChanged" title="Assembly scope"><option value="All">All assemblies</option><option value="Selected" disabled="@(SelectedAssemblyMvid is null)">Selected assembly</option></select><button class="run-search" @onclick="SearchAsync">Search</button><small>@results.Count result@(results.Count == 1 ? "" : "s")</small><button class="close-search" title="Close search" @onclick="CloseSearch">×</button></header>
+          <div class="search-results-header" role="row">
+            <span role="columnheader">Type</span><span role="columnheader">Name</span><span role="columnheader">Namespace</span><span role="columnheader">Assembly</span>
+          </div>
           <div class="search-results">
-            <div class="search-results-header" role="row">
-              <span role="columnheader">Type</span><span role="columnheader">Name</span><span role="columnheader">Namespace</span><span role="columnheader">Assembly</span>
-            </div>
             @if (results.Count == 0) { <div class="no-results">@(string.IsNullOrWhiteSpace(query) ? "Type a name to search across open assemblies." : "No matching types or members.")</div> }
             @foreach (var result in results) {
               <button class="search-result" @onclick="e => OpenSearchResultAsync(result, e.CtrlKey)">
