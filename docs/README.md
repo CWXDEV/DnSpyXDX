@@ -11,5 +11,6 @@ This documentation describes the planned cross-platform dnSpy-style decompiler b
 - [Dependencies and platform support](dependencies-and-platform.md) — package policy, Windows/Linux publishing, native prerequisites, and CI.
 - [Reliability and testing](reliability-and-testing.md) — handling untrusted inputs, test fixtures, and MVP acceptance criteria.
 - [Implementation roadmap](implementation-roadmap.md) — delivery phases, estimates, and ordered backlog.
+- [Next steps and roadmap review](next-steps-23-07.md) — recommended delivery order, skipped work, substitutions, and documentation follow-up.
 - [Architecture decisions](architecture-decisions.md) — MVP defaults and decisions to lock before Phase 1.
 - [References](references.md) — primary upstream projects, APIs, packages, and .NET documentation.
