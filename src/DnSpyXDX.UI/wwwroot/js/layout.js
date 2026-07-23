@@ -91,6 +91,17 @@ window.dnSpyXdx.initHistoryButtons = function (dotNet) {
     dotNet.invokeMethodAsync("NavigateHistory", event.key === "ArrowRight");
   });
 };
+window.dnSpyXdx.initPanelHorizontalWheel = function () {
+  if (window.dnSpyXdx.panelHorizontalWheelReady) return;
+  window.dnSpyXdx.panelHorizontalWheelReady = true;
+  window.addEventListener("wheel", event => {
+    if (!event.shiftKey) return;
+    const panel = event.target.closest(".explorer-tree,.source-viewport,.search-results");
+    if (!panel) return;
+    event.preventDefault();
+    panel.scrollLeft += (event.deltaY || event.deltaX) * 0.5;
+  }, { passive: false });
+};
 window.dnSpyXdx.setSourceScroll = async function (source, top, left) {
   if (!source) return;
   top = Math.max(0, top || 0);

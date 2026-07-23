@@ -22,7 +22,7 @@ else
   <div class="source-viewport" @ref="viewport" tabindex="0" role="region" aria-label="Decompiled source">
     <div class="source-canvas" style="min-width:@CanvasWidth">
       <Virtualize @key="model.Key" @ref="virtualizer" Context="line" ItemsProvider="LoadLinesAsync" ItemSize="LineHeight" OverscanCount="Overscan">
-        <SourceLineView @key="line.Number" Line="line" LineHeight="LineHeight" Matches="FindSpans(line.Number)" ActiveMatchOffset="ActiveMatchOffset" FocusedLine="focusedLine" HoveredSymbol="hoveredSymbol" OnHoverSymbol="HighlightSymbol" OnNavigate="OnNavigate" />
+        <SourceLineView @key="line.Number" Line="line" LineHeight="LineHeight" Matches="FindSpans(line.Number)" ActiveMatchOffset="ActiveMatchOffset" FocusedLine="focusedLine" HoveredSymbol="hoveredSymbol" OnHoverSymbol="HighlightSymbol" OnNavigate="NavigateAsync" />
       </Virtualize>
     </div>
   </div>
@@ -231,6 +231,9 @@ else
     hoveredSymbol = symbol;
     StateHasChanged();
   }
+
+  private Task NavigateAsync(NavigationRequest request) =>
+    request.Symbol == Document.Symbol && !request.NewTab ? Task.CompletedTask : OnNavigate.InvokeAsync(request);
 
   private IReadOnlyList<SourceFindSpan> FindSpans(int line) =>
     findSpans.TryGetValue(line, out var spans) ? spans : [];

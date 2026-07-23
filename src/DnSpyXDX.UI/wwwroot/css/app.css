@@ -65,7 +65,7 @@
 .search-panel>header button{margin-left:auto;width:27px;height:27px;border:0;background:transparent;color:var(--theme-color-9ba8bc);font-size:19px;border-radius:4px}
 .search-panel>header button:hover{background:var(--theme-color-293246);color:var(--theme-color-fff)}
 .search-results{min-height:0;overflow:scroll;padding:0;display:block}
-.search-results-header,.search-result{width:100%;display:grid;grid-template-columns:80px minmax(120px,1.4fr) minmax(100px,1fr) minmax(100px,.7fr);align-items:center;padding:5px 12px}
+.search-results-header,.search-result{width:100%;display:grid;grid-template-columns:80px minmax(220px,1fr) minmax(100px,.35fr);align-items:center;padding:5px 12px}
 .search-results-header{background:var(--theme-color-171d28);border-bottom:1px solid var(--theme-color-2b3444);color:var(--theme-color-8da0bf);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .search-results-header>span:nth-child(n+3),.search-result>span:nth-child(n+3){width:100%;text-align:right}
 .search-results-header>span{position:relative;height:100%;display:flex;align-items:center}.search-results-header>span:nth-child(n+3){justify-content:flex-end}
@@ -74,7 +74,7 @@
 .search-result:hover{background:var(--theme-color-202a3a)}
 .result-kind{font-size:10px;text-transform:uppercase;color:var(--theme-color-8090aa)}
 .result-kind.result-method{color:var(--theme-color-dcdcaa)}.result-kind.result-field{color:var(--theme-color-c586c0)}.result-kind.result-property,.result-kind.result-event{color:var(--theme-color-9cdcfe)}.result-kind.result-type{color:var(--theme-color-4ec9b0)}
-.result-name{color:var(--theme-color-f0f2f6)}.result-namespace{color:var(--theme-color-d7ba7d);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result-assembly{color:var(--theme-color-76869f);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.result-name{color:var(--theme-color-f0f2f6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.result-assembly{color:var(--theme-color-76869f);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .no-results{padding:20px;color:var(--theme-color-7e8ba0)}
 .tree-row.selected{background:var(--theme-color-293957);box-shadow:inset 2px 0 var(--theme-color-7c72ff)}.tree-row.selected:hover{background:var(--theme-color-314567)}
 
@@ -123,8 +123,6 @@ select{appearance:none;color-scheme:dark;height:27px;border:1px solid var(--them
 
 /* Fixed-height rows let Blazor virtualize generated source without building a document-sized DOM. */
 .source-viewport{position:relative;width:100%;height:100%;overflow:scroll;outline:none;background:var(--theme-color-0d1118);color:var(--theme-color-f4f7fc);font:13px/20px 'DnSpyXDX Mono',monospace;tab-size:4}
-.source-viewport{scrollbar-width:none}
-.source-viewport::-webkit-scrollbar{display:none;width:0;height:0}
 .source-viewport:focus-visible{box-shadow:inset 0 0 0 1px var(--theme-color-536078)}
 .source-canvas{min-height:100%;padding:12px 0 20px}
 .source-line{display:grid;grid-template-columns:64px minmax(max-content,1fr);align-items:stretch;white-space:pre}
@@ -158,7 +156,9 @@ button.source-token.code-link{text-decoration:none}
 
 /* Horizontal overflow is intentionally clipped throughout the desktop UI;
    vertical scrolling remains enabled by each region's existing overflow rule. */
-.explorer,.source,.tabs,.search-results{overflow-x:hidden}
+.explorer,.source,.tabs{overflow-x:hidden}
+.explorer-tree,.source-viewport,.search-results{overflow-x:auto}
+.explorer-tree::-webkit-scrollbar:horizontal,.source-viewport::-webkit-scrollbar:horizontal,.search-results::-webkit-scrollbar:horizontal{height:0;display:none}
 
 /* Bundled faces keep typography deterministic and available without an OS font or network. */
 :root{font-family:'DnSpyXDX Sans',sans-serif}
@@ -178,7 +178,7 @@ button.source-token.code-link{text-decoration:none}
 .tree-action:disabled{opacity:.3;cursor:default}
 .tree-action svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .explorer-pane>.explorer{display:grid;grid-template-rows:40px minmax(0,1fr);overflow:hidden;padding-bottom:0}
-.explorer-tree{min-height:0;overflow-y:scroll;overflow-x:hidden;padding-bottom:20px}
+.explorer-tree{min-height:0;overflow-y:scroll;padding-bottom:20px}
 
 .settings-row+.settings-row{border-top:1px solid var(--theme-color-30394a)}
 .settings-checkbox{width:17px;height:17px;accent-color:var(--theme-color-7968ff)}

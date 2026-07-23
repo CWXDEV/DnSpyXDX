@@ -35,6 +35,7 @@ public sealed class DecompilerBackendTests
         var document = await backend.DecompileAsync(testType.Symbol!.Value);
 
         Assert.Contains("class DecompilerBackendTests", document.Text, StringComparison.Ordinal);
+        Assert.Contains("namespace DnSpyXDX.Tests;", document.Text, StringComparison.Ordinal);
         Assert.Contains("// Token: 0x", document.Text, StringComparison.Ordinal);
         Assert.Contains("RID:", document.Text, StringComparison.Ordinal);
     }
@@ -124,10 +125,25 @@ public sealed class DecompilerBackendTests
         Assert.Equal("Action<TItem>", members.Single(n => n.Kind == TreeNodeKind.Event && n.Name == nameof(GenericSample<object>.Changed)).TypeDisplay);
         Assert.Equal("TResult", members.Single(n => n.Name == nameof(GenericSample<object>.Convert)).TypeDisplay);
         Assert.Equal("GenericSample<TItem>", searchResult.Name);
+        Assert.Equal("DnSpyXDX.Tests.GenericSample<TItem>", searchResult.QualifiedName);
+        Assert.Equal("DnSpyXDX.Tests.GenericSample<TItem>.Field", fieldSearchResult.QualifiedName);
         Assert.Equal(genericType.Symbol, searchResult.DeclaringType);
         Assert.Equal(genericType.Symbol, fieldSearchResult.DeclaringType);
         Assert.Equal(genericType.Symbol, await backend.GetDeclaringTypeAsync(fieldSearchResult.Symbol));
         Assert.Equal("GenericSample<TItem>", document.Title);
+    }
+
+    [Fact]
+    public async Task Searches_fully_qualified_nested_type_and_member_names()
+    {
+        await using var backend = new DecompilerBackend();
+        await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+
+        var nested = Assert.Single(await backend.SearchAsync("DnSpyXDX.Tests.SampleMembers.SampleNested"), result => result.Kind == "Type");
+        var member = Assert.Single(await backend.SearchAsync("DnSpyXDX.Tests.SampleMembers.SampleField"), result => result.Kind == "Field");
+
+        Assert.Equal("DnSpyXDX.Tests.SampleMembers.SampleNested", nested.QualifiedName);
+        Assert.Equal("DnSpyXDX.Tests.SampleMembers.SampleField", member.QualifiedName);
     }
 
     [Fact]

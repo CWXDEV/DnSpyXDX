@@ -338,7 +338,11 @@ internal sealed class AssemblySession : IDisposable
             if (cache.TryGetValue(symbol.MetadataToken, out cached)) return cached;
             var handle = MetadataTokens.EntityHandle(symbol.MetadataToken);
             decompiler.CancellationToken = ct;
-            var text = await Task.Run(() => AddTokenComments(decompiler.DecompileAsString([handle]), handle), ct);
+            var text = await Task.Run(() =>
+            {
+                var source = decompiler.DecompileAsString([handle]);
+                return AddTokenComments(AddNamespaceDeclaration(source, DeclaringTypeOf(handle)), handle);
+            }, ct);
             ct.ThrowIfCancellationRequested();
             var title = GetEntityName(handle);
             var result = new DecompilerDocument(symbol, title, "csharp", text, [], [], BuildSymbolLinks(handle));
@@ -525,14 +529,20 @@ internal sealed class AssemblySession : IDisposable
         foreach (var h in metadata.TypeDefinitions)
         {
             ct.ThrowIfCancellationRequested();
-            var t = metadata.GetTypeDefinition(h); var metadataName = metadata.GetString(t.Name); var typeName = TypeDisplayName(t); var ns = metadata.GetString(t.Namespace);
-            if (typeName.Contains(query, StringComparison.OrdinalIgnoreCase) || metadataName.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(h, typeName, "Type", ns);
-            foreach (var m in t.GetMethods()) { var name = metadata.GetString(metadata.GetMethodDefinition(m).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(m, name, "Method", ns); }
-            foreach (var f in t.GetFields()) { var name = metadata.GetString(metadata.GetFieldDefinition(f).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(f, name, "Field", ns); }
-            foreach (var p in t.GetProperties()) { var name = metadata.GetString(metadata.GetPropertyDefinition(p).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(p, name, "Property", ns); }
-            foreach (var e in t.GetEvents()) { var name = metadata.GetString(metadata.GetEventDefinition(e).Name); if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return Result(e, name, "Event", ns); }
+            var t = metadata.GetTypeDefinition(h); var metadataName = metadata.GetString(t.Name); var typeName = TypeDisplayName(t);
+            var typeResult = Result(h, typeName, "Type");
+            if (Matches(typeResult, metadataName, query)) yield return typeResult;
+            foreach (var m in t.GetMethods()) { var name = metadata.GetString(metadata.GetMethodDefinition(m).Name); var result = Result(m, name, "Method"); if (Matches(result, name, query)) yield return result; }
+            foreach (var f in t.GetFields()) { var name = metadata.GetString(metadata.GetFieldDefinition(f).Name); var result = Result(f, name, "Field"); if (Matches(result, name, query)) yield return result; }
+            foreach (var p in t.GetProperties()) { var name = metadata.GetString(metadata.GetPropertyDefinition(p).Name); var result = Result(p, name, "Property"); if (Matches(result, name, query)) yield return result; }
+            foreach (var e in t.GetEvents()) { var name = metadata.GetString(metadata.GetEventDefinition(e).Name); var result = Result(e, name, "Event"); if (Matches(result, name, query)) yield return result; }
         }
     }
+
+    private static bool Matches(SearchResult result, string metadataName, string query) =>
+        result.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        metadataName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        result.QualifiedName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true;
 
     public IReadOnlyList<NodeId> GetPath(SymbolId symbol, CancellationToken ct)
     {
@@ -561,11 +571,55 @@ internal sealed class AssemblySession : IDisposable
     private TypeDefinitionHandle FindPropertyDeclaringType(PropertyDefinitionHandle target) => metadata.TypeDefinitions.FirstOrDefault(t => metadata.GetTypeDefinition(t).GetProperties().Contains(target));
     private TypeDefinitionHandle FindEventDeclaringType(EventDefinitionHandle target) => metadata.TypeDefinitions.FirstOrDefault(t => metadata.GetTypeDefinition(t).GetEvents().Contains(target));
 
-    private SearchResult Result(EntityHandle h, string name, string kind, string ns)
+    private string AddNamespaceDeclaration(string source, TypeDefinitionHandle typeHandle)
+    {
+        if (typeHandle.IsNil) return source;
+        var outer = typeHandle;
+        while (!metadata.GetTypeDefinition(outer).GetDeclaringType().IsNil) outer = metadata.GetTypeDefinition(outer).GetDeclaringType();
+        var ns = metadata.GetString(metadata.GetTypeDefinition(outer).Namespace);
+        if (string.IsNullOrEmpty(ns)) return source;
+        if (source.Contains($"namespace {ns}", StringComparison.Ordinal)) return source;
+
+        var lines = source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
+        var insertion = 0;
+        while (insertion < lines.Count)
+        {
+            var line = lines[insertion].TrimStart();
+            if (line.Length == 0 || line.StartsWith("using ", StringComparison.Ordinal) || line.StartsWith("extern alias ", StringComparison.Ordinal) || line.StartsWith('#')) insertion++;
+            else break;
+        }
+        lines.Insert(insertion, $"namespace {ns};");
+        lines.Insert(insertion + 1, "");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private SearchResult Result(EntityHandle h, string name, string kind)
     {
         var symbol = new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h));
         var declaringType = DeclaringTypeOf(h);
-        return new(symbol, name, kind, Descriptor.Name, ns, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(declaringType)));
+        var qualifiedType = QualifiedTypeName(declaringType);
+        var qualifiedName = h.Kind == HandleKind.TypeDefinition ? qualifiedType : $"{qualifiedType}.{name}";
+        var outer = declaringType;
+        while (!metadata.GetTypeDefinition(outer).GetDeclaringType().IsNil) outer = metadata.GetTypeDefinition(outer).GetDeclaringType();
+        var ns = metadata.GetString(metadata.GetTypeDefinition(outer).Namespace);
+        return new(symbol, name, kind, Descriptor.Name, ns, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(declaringType)), qualifiedName);
+    }
+
+    private string QualifiedTypeName(TypeDefinitionHandle handle)
+    {
+        var names = new Stack<string>();
+        var current = handle;
+        while (!current.IsNil)
+        {
+            var type = metadata.GetTypeDefinition(current);
+            names.Push(TypeDisplayName(type));
+            current = type.GetDeclaringType();
+        }
+        var outer = metadata.GetTypeDefinition(handle);
+        while (!outer.GetDeclaringType().IsNil) outer = metadata.GetTypeDefinition(outer.GetDeclaringType());
+        var ns = metadata.GetString(outer.Namespace);
+        var typeName = string.Join('.', names);
+        return string.IsNullOrEmpty(ns) ? typeName : $"{ns}.{typeName}";
     }
     private string GetEntityName(EntityHandle h) => h.Kind switch
     {
