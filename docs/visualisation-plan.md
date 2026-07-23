@@ -1,294 +1,421 @@
-# Virtualized source visualisation plan
+# Pure Blazor source visualisation plan
 
 Reviewed on 2026-07-23 for the `visualisation` branch.
 
 ## Goal
 
-Replace the full-document Razor/HTML source view with a read-only, virtualized editor that remains responsive for large decompiled types while preserving DnSpyXDX navigation, search, themes, token focus, block structure, accessibility, and offline operation.
+Replace the full-document highlighted `<pre>` with a read-only, virtualized Blazor source viewer that remains responsive for large decompiled types. Preserve syntax colors, reference navigation, find, declaration focus, block guides, tab view state, themes, keyboard access, and offline operation.
 
-This milestone covers source presentation. It does not add IL modes, exact semantic-span production, editing, language servers, or a persistent disk cache.
+The implementation must remain .NET-centric:
 
-## Decision
+- no Monaco, CodeMirror, npm, Node, frontend bundler, web worker, or CDN assets
+- source indexing, tokenization, search, caching, and navigation implemented in C#
+- Razor renders only the visible line range through .NET 10 `Virtualize<TItem>`
+- browser interop limited to scroll position, viewport measurements, focus, and scrolling to an exact line in the existing `layout.js`
 
-Use **Monaco Editor**, loaded from a locally bundled ESM build.
+This milestone does not add IL modes, exact semantic-reference production, editing, language servers, or a persistent disk cache.
 
-Monaco is the preferred fit because it provides virtualized line rendering, explicit text models, built-in find, read-only and accessibility modes, large-file optimizations, model decorations, bracket matching, view-state save/restore, and range reveal. Models have stable URIs and explicit disposal, which maps cleanly to document tabs. Its API also provides the semantic-token, hover, and definition-provider extension points needed later.
+## Why this design
 
-CodeMirror 6 is a credible smaller fallback and also draws only viewport content, but adopting it would require more custom work to reproduce Monaco's IDE-like interaction and future semantic features. Reconsider CodeMirror only if the Photino worker/bundle spike fails or Monaco's packaged size and startup cost exceed the agreed budgets.
+The current `SourceView.razor` highlights the complete document into one HTML string and inserts a span for every token. JavaScript then scans or measures the full DOM for links, find matches, braces, and block guides. CPU, allocations, DOM size, layout work, and disposal time therefore scale with the complete document.
 
-Do not use Monaco's AMD build. AMD support is deprecated; use ESM and a bundler. Do not load editor files, fonts, or workers from a CDN because the application must remain offline-capable.
+Blazor's `Virtualize<TItem>` calculates the visible item range and renders only that slice plus a configurable overscan. It supports an `ItemsProvider`, exact `ItemSize`, asynchronous loading, cancellation, and `RefreshDataAsync`. Source lines are naturally fixed-height items, so this is a good fit without introducing another UI runtime.
 
-## Current bottlenecks
+The main trade-off is that browser-native selection cannot span lines that are not currently rendered. This viewer is for inspection rather than editing. Preserve ordinary selection within the rendered window and add an explicit **Copy all source** command if whole-document copying is required.
 
-`SourceView.razor` currently:
-
-1. Runs `CodeHighlighter.Highlight` across the complete source string on every document change.
-2. Creates an HTML span for each classified token.
-3. Inserts the complete highlighted document into one `<pre>`.
-4. Queries the full DOM for link highlighting, token focus, find results, brace pairs, and block guides.
-5. Measures every brace pair to draw a document-sized SVG overlay.
-
-This makes CPU time, allocations, DOM size, layout work, and disposal latency scale with the entire document. Razor component virtualization would not fix these costs because the expensive unit is a single generated HTML document.
-
-## Architecture
-
-### Ownership boundary
-
-Blazor remains responsible for:
-
-- tabs, active-document selection, history, and cancellation
-- document identity, source text, reference metadata, and diagnostics
-- application theme selection
-- navigation requests back into the backend
-
-A small JavaScript module owns:
-
-- the single editor instance for the active document area
-- Monaco models and model-scoped decorations
-- per-document Monaco view state
-- editor mouse, keyboard, find, focus, and resize events
-- Monaco resource disposal
-
-Keep Monaco behind this interop surface:
+## Target architecture
 
 ```text
-initialize(container, dotNet, options)
-setDocument(documentKey, language, text, references, focusOffset)
-closeDocument(documentKey)
-setTheme(themeId)
-focus()
-openFind()
-captureViewState(documentKey)
-dispose()
+DecompilerDocument.Text
+        |
+        v
+SourceDocumentModel ---------------------------+
+  line starts, lengths, max width, token map   |
+        |                                       |
+        v                                       |
+Virtualize<SourceLine>                          |
+  ItemsProvider requests visible lines         |
+        |                                       |
+        v                                       |
+SourceLine.razor                                |
+  Razor-rendered tokens and reference actions  |
+                                                |
+SourcePresentationCache <-----------------------+
+  bounded document and token batches
 ```
 
-Do not expose Monaco objects to .NET or spread Monaco calls through unrelated JavaScript.
+### Responsibilities
 
-### Document identity
+`SourceDocumentModel` owns immutable presentation data for one document:
 
-Give every model a deterministic, collision-resistant URI derived from:
+- document key and plain source text
+- line start offsets and lengths
+- newline convention
+- maximum visual column count
+- tokenization-state checkpoints
+- metadata-token declaration locations
+- current heuristic reference targets, later replaceable with exact spans
+
+`VirtualizedSourceView.razor` owns:
+
+- `Virtualize<SourceLine>` and its `ItemsProvider`
+- active tab/document binding
+- find UI and match navigation
+- focus/reveal requests
+- visible-range loading and cancellation
+- per-tab scroll/view-state capture and restoration
+
+`SourceLine.razor` owns one fixed-height row:
+
+- line number gutter
+- token/text fragments
+- reference click and Ctrl+click callbacks
+- find-match and focused-declaration classes
+- indentation and bracket-guide fragments
+
+`SourcePresentationCache` owns:
+
+- bounded document models
+- tokenized line batches
+- recency and approximate byte accounting
+- eviction and cancellation
+
+The existing JavaScript file owns only browser operations Blazor cannot express directly:
+
+- read/write `scrollTop` and `scrollLeft`
+- observe viewport size changes
+- set a calculated scroll offset for a target line
+- focus the scroll container
+
+No JavaScript generates source markup, tokenizes text, searches source, owns document state, or resolves navigation.
+
+## Document and line model
+
+### Stable identity
+
+Key presentation models by:
 
 ```text
 module MVID + metadata token + language + settings fingerprint
 ```
 
-The first implementation may use C# and the current settings only, but the key must leave room for language modes. Never reuse one URI for different content. Dispose its model, decorations, listeners, and saved view state when the tab closes or its assembly unloads.
+The first implementation only uses C#, but the key must leave room for future language modes. A tab is not a document identity: two tabs may show the same document while retaining separate view state.
 
-### Models and view state
+### Text and offsets
 
-- Create one editor with `model: null` and switch explicit models into it.
-- Before switching, call `saveViewState()` for the outgoing document.
-- Attach the target model, then restore its saved state.
-- A new document starts at the top unless it has a focus target.
-- For search/source member navigation, convert the member's source offset to a Monaco position and reveal it near the top.
-- Define whether navigation history snapshots view state immediately or only when leaving a document; use one policy consistently.
+- Keep `DecompilerDocument.Text` as plain text.
+- Define all offsets as UTF-16 code-unit offsets, matching .NET strings and browser text offsets.
+- Build a line-start table in one pass without creating a string for every line.
+- Store each line as `(index, startOffset, length)` and slice the source with `ReadOnlyMemory<char>` or spans while preparing a visible batch.
+- Preserve the original newline convention or normalize once before any reference offsets are produced.
+- Test CRLF, LF, empty lines, final newlines, tabs, combining characters, and surrogate pairs.
 
-Do not keep models for every document forever. The UI model cache must follow the bounded cache policy and may recreate an evicted model from cached source text.
+### Fixed row geometry
 
-### Text and offset contract
+Virtualization depends on stable item height. Use one exact line height, initially 20 px, and prohibit wrapping. Pass the same value to `Virtualize.ItemSize` and CSS.
 
-Keep `DecompilerDocument.Text` as plain text. Do not send highlighted HTML.
+Horizontal width must not change as different lines enter the viewport. During indexing, calculate the document's maximum visual column count with the configured tab width. Give the virtualized content canvas a stable minimum width derived from that value plus the line-number gutter.
 
-All .NET offsets are UTF-16 code-unit offsets, matching JavaScript strings and Monaco model offsets. Document and test this rule before semantic decorations are introduced. Normalize line endings once in the backend or presentation adapter; reference offsets must be computed after the same normalization.
+Cap pathological widths for layout safety and provide horizontal scrolling. Lines beyond the cap remain available through selection/copy and may use a warning marker.
 
-Add presentation records with explicit spans rather than name maps:
+## C# tokenization pipeline
+
+Refactor `CodeHighlighter` into a tokenizer and renderer instead of producing one complete HTML document.
+
+### Token output
 
 ```csharp
-public sealed record SourceDecoration(
-    int StartOffset,
+public readonly record struct SourceToken(
+    int Start,
     int Length,
-    string Classification,
-    SymbolId? Target,
-    string? Tooltip);
+    SourceTokenKind Kind,
+    SymbolId? Target = null,
+    int? BraceDepth = null,
+    int? BracePair = null);
+
+public sealed record SourceLine(
+    int Number,
+    int StartOffset,
+    ReadOnlyMemory<char> Text,
+    IReadOnlyList<SourceToken> Tokens);
 ```
 
-The initial migration can use Monaco's C# tokenizer for lexical colors and translate current token comments/focus metadata into decorations. Exact navigation continues to be a later backend milestone; do not encode the existing name heuristic into the new editor contract.
+Token offsets are relative to their line; model and reference offsets remain document-relative.
 
-### Tokenization and decorations
+### Stateful lexical scanning
 
-- Use Monaco's bundled C# Monarch tokenizer for the first version.
-- Map DnSpyXDX themes through `defineTheme` and `setTheme`.
-- Use a decorations collection for clickable references, focused declarations, diagnostics, metadata-token markers, and any classifications Monaco cannot express.
-- Use Monaco's native bracket-pair colorization and guides instead of the current full-document brace scan and SVG overlay.
-- Use Monaco's built-in find widget instead of maintaining a second source-find implementation.
-- Disable editing affordances, suggestions, drag/drop, validation, and language services that have no read-only value.
-- Keep `largeFileOptimizations` enabled and choose an explicit maximum tokenized line length.
+A line cannot always be tokenized independently because block comments, verbatim/raw strings, interpolation, preprocessor regions, and brace depth cross line boundaries. Implement a small immutable `TokenizerState` containing the lexical mode, brace stack/depth, and preprocessor state needed by the next line.
 
-Incremental tokenization should be owned by Monaco and its worker where supported. Do not pre-tokenize the complete document in .NET and do not create one decoration per lexical token.
+- Scan sequentially in cancellable batches.
+- Store state checkpoints every 128–256 lines.
+- To render an uncached range, resume at its nearest checkpoint and scan forward.
+- Cache the requested range plus overscan.
+- Run uncached batch tokenization with `Task.Run` so the Photino UI thread remains responsive.
+- Never call Razor component APIs from the worker thread; return immutable results and apply them through `InvokeAsync`.
 
-### Navigation behavior
+Reuse the current classifications and tests as the starting behavior. Add coverage for raw strings, interpolation, escaped identifiers, generic types, attributes, operators, and malformed/incomplete source.
 
-Preserve these interactions:
+### References
 
-- Click a resolvable reference to navigate in the current tab.
-- Ctrl+click opens in a new tab.
-- Alt/Shift preserve text-selection behavior.
-- Hover highlights occurrences only when the cost is bounded to Monaco decorations/providers.
-- Opening a member from search or source reveals and briefly emphasizes its declaration in the declaring-type document.
-- Back/forward restores the prior document and view state.
+The backend currently supplies a name-to-symbol map rather than exact reference spans. Preserve existing behavior during this milestone by resolving only identifier tokens outside comments and literals against that map.
 
-Implement navigation using editor mouse events plus offset-to-span lookup. Keep spans sorted and use binary search; avoid scanning every reference on pointer movement.
+Do not let this compatibility rule become the permanent viewer contract. `SourceToken.Target` and document-relative spans must accept exact backend semantic references later without changing Razor components.
 
-## Packaging and host integration
+### Brackets and guides
 
-### Asset pipeline
+- Carry brace depth/pair information from the tokenizer.
+- Apply the seven existing rainbow-brace classes to visible brace tokens.
+- Render indentation/bracket guides only for visible lines.
+- Precompute compact guide intervals or active depths; never measure every brace in the DOM or build a document-sized SVG.
+- Verify nested, unmatched, and braces-inside-comment/string cases.
 
-1. Add a small frontend package beneath `src/DnSpyXDX.UI` with an exact `monaco-editor` version and committed lockfile.
-2. Bundle the ESM editor entry, C# language contribution, CSS, fonts, and editor worker into deterministic files under `wwwroot`.
-3. Commit generated bundles so ordinary `dotnet build` and offline application startup continue to require only the documented .NET SDK and native prerequisites.
-4. Provide one explicit asset-regeneration command for maintainers with a pinned Node version.
-5. Fail CI when regenerated assets differ from committed assets.
-6. Add Monaco's MIT license and third-party notices to release license output.
+## Virtualized rendering
 
-Avoid importing all language contributions and language-service workers. Bundle only editor core, C#, and the base editor worker unless measurements show another module is required.
+Use an `ItemsProvider` instead of allocating a permanent `SourceLine` object for every line.
 
-### Photino spike
+```razor
+<div class="source-viewport" tabindex="0" @ref="viewport">
+  <div class="source-canvas" style="min-width:@CanvasWidth">
+    <Virtualize @ref="virtualizer"
+                Context="line"
+                ItemsProvider="LoadLinesAsync"
+                ItemSize="LineHeight"
+                OverscanCount="Overscan">
+      <SourceLineView @key="line.Number" Line="line" OnNavigate="OnNavigate" />
+    </Virtualize>
+  </div>
+</div>
+```
 
-Before the full migration, build a minimal editor page and verify on both Windows WebView2 and Linux WebKitGTK:
+Implementation rules:
 
-- ESM bundle loading from the application's actual origin
-- editor worker creation without network access
-- worker and font URLs resolve from published output
-- clipboard, Ctrl+F, Ctrl+click, selection, and context menu behavior
-- `ResizeObserver`/automatic layout during pane and window resize
-- theme application before the editor becomes visible
-- clean shutdown without worker or JS-disconnection errors
+- Start with 10 overscan lines, then tune from traces.
+- Honor `ItemsProviderRequest.CancellationToken` immediately.
+- Return the exact total line count.
+- Give every row the exact configured height.
+- Keep the scroll container focusable for keyboard scrolling.
+- Use `@key` with stable line numbers.
+- Avoid nested components for individual tokens; render token fragments inside one line component.
+- Override `ShouldRender` for line rows when their immutable model and transient highlight version have not changed.
+- Avoid handling raw `onscroll` in Blazor; `Virtualize` owns normal scrolling.
 
-Monaco workers cannot be assumed to behave like normal scripts, and `file://` pages cannot create them. Treat successful worker startup on both Photino backends as the milestone gate. If Photino's origin cannot support workers, investigate an application-local HTTP origin before accepting main-thread fallback.
+## Find and navigation
+
+### Find
+
+Implement document search in C# against the plain source text:
+
+- debounce query changes
+- compute matches on a background task with cancellation
+- store document offsets, not DOM ranges
+- map offsets to line/column by binary-searching the line-start table
+- decorate only matches in rendered lines
+- keep current match index and total count in Blazor state
+- scroll to the selected match by calculated line offset
+- support Enter, Shift+Enter, Escape, and Ctrl+F
+
+Search must not force tokenization of every line.
+
+### Reference navigation
+
+Render linkable identifier tokens as buttons or accessible inline elements without changing monospace alignment. Preserve:
+
+- click: navigate in the active tab
+- Ctrl+click: open in a new tab
+- Alt/Shift: leave text selection alone
+- keyboard activation with Enter
+- grouped occurrence highlighting within currently rendered lines
+
+Use one `EventCallback<NavigationRequest>` from each line to the source view. Do not attach global DOM queries or one JavaScript listener per token.
+
+### Declaration focus
+
+Build a metadata-token-to-line index from declaration token comments while indexing the document. When search or source navigation supplies `FocusSymbol`:
+
+1. Resolve its line and column in C#.
+2. Set the viewport scroll offset to `line * LineHeight`, adjusted to place it near the upper third.
+3. Mark the declaration token with a transient focus class.
+4. Clear the emphasis after the existing animation without rebuilding the document model.
+
+## View state and lifecycle
+
+Store view state by `(tab ID, document key)`:
+
+```csharp
+public sealed record SourceViewState(
+    double ScrollTop,
+    double ScrollLeft,
+    int? ActiveMatch,
+    int? SelectionStart,
+    int? SelectionLength);
+```
+
+Initial implementation requirements:
+
+- capture outgoing scroll offsets before switching documents or tabs
+- restore offsets after the new virtualized content renders
+- retain separate state when two tabs show the same document
+- restore back/forward navigation without re-tokenizing cached ranges
+- cancel active find and tokenization work when a tab closes
+- release view state on tab close and all related data on assembly unload
+- decide separately whether selection/find state should survive application restart
+
+Scroll capture/restore is the one intentional browser-interop dependency. Keep it as a few functions in `layout.js`; all policy and state remain in C#.
+
+## Bounded caching
+
+Use a shared `SourcePresentationCache` registered through dependency injection.
+
+Start with both limits:
+
+- at most 12 document models
+- at most 64 MiB estimated presentation memory
+
+Count at minimum:
+
+- source text at two bytes per UTF-16 code unit
+- line-index arrays
+- tokenizer checkpoints
+- cached token arrays and strings
+- find-result arrays
+
+Evict least-recently-used inactive documents. The active document is never evicted. Token batches may have a smaller independent budget so a single huge document cannot occupy the entire cache. Eviction must cancel work and release arrays promptly.
+
+Expose counters in debug logging: models, cached batches, estimated bytes, hits, misses, evictions, tokenization duration, and requested line ranges.
 
 ## Implementation phases
 
-### 1. Integration spike
+### 1. Extract document indexing
 
-- Bundle a pinned Monaco ESM build locally.
-- Render a read-only C# model in Photino.
-- Prove the worker and all assets load offline on Windows and Linux.
-- Measure bundle size, editor startup, a 5 MB document, and disposal.
-- Record the choice or fallback in an architecture decision.
+- Add `SourceDocumentModel`, document keys, line indexing, max-width calculation, and token-location lookup.
+- Establish UTF-16/newline rules.
+- Add tests for boundary cases and large generated input.
 
-Exit: both platforms pass the spike and the editor does not fetch remote resources.
+Exit: indexing is deterministic, cancellable where appropriate, and does not allocate one string per source line.
 
-### 2. Editor adapter
+### 2. Extract the tokenizer
 
-- Add `monaco-editor.js` with the narrow interop API above.
-- Replace `<pre>` output in `SourceView.razor` with an editor host element.
-- Configure read-only behavior, accessibility, resizing, C# tokenization, and find.
-- Dispose the editor, listeners, and worker-facing resources safely.
+- Replace full-document HTML generation with line/batch token output.
+- Add tokenizer state and checkpoints.
+- Preserve existing syntax, reference, and brace behavior in tests.
+- Run batch work off the UI thread.
 
-Exit: normal documents retain copy, selection, find, scrolling, and keyboard accessibility.
+Exit: arbitrary requested ranges render correctly from their nearest checkpoint.
 
-### 3. Tabs and view state
+### 3. Introduce the virtualized viewer
 
-- Create stable model keys.
-- Save and restore cursor, selection, folding, and scroll state per tab.
-- Dispose models on tab close and assembly unload.
-- Preserve state across back/forward navigation.
-- Decide which subset of view state belongs in persisted sessions.
+- Add `VirtualizedSourceView.razor` and `SourceLineView.razor`.
+- Wire `Virtualize<TItem>` to the document model.
+- Add fixed-height rows, stable horizontal canvas width, overscan, keyboard scrolling, and cancellation.
+- Replace the production `<pre>` path after parity tests pass.
 
-Exit: switching among tabs neither resets view state nor leaks models.
+Exit: DOM size remains proportional to viewport height rather than document length.
 
-### 4. DnSpyXDX presentation features
+### 4. Restore viewer features
 
-- Port all application themes to Monaco themes.
-- Replace custom brace spans/guides with Monaco bracket features.
-- Add declaration focus/reveal and metadata-token decorations.
-- Add reference hover/click/Ctrl+click behavior using the current available navigation data.
-- Remove superseded highlighting, source-find, and block-structure code.
+- Port reference navigation and occurrence highlighting.
+- Port C# find and match decoration.
+- Port declaration focus and reveal.
+- Render visible brace/indent guides.
+- Preserve all application themes.
+- Add copy-all behavior if whole-document selection is required.
 
-Exit: the old source view can be deleted without losing supported behavior.
+Exit: the old source viewer can be removed without losing supported workflows.
 
-### 5. Large-document and cache controls
+### 5. Add view state and bounded caches
 
-- Add a bounded LRU for UI models and presentation metadata.
-- Set separate limits for model count and approximate text/decorations bytes.
-- Cancel pending document/presentation work on close or replacement.
-- Avoid re-sending unchanged text across JS interop.
-- Instrument creation, model switch, first render, eviction, and disposal timings.
+- Capture and restore per-tab/document scroll state.
+- Add model and token-batch LRU limits.
+- Dispose state on tab close and assembly unload.
+- Prevent unrelated UI renders from rebuilding source models or retokenizing unchanged ranges.
 
-Exit: large-document actions satisfy the agreed performance and memory budgets.
+Exit: repeated navigation stays warm while memory plateaus at configured limits.
 
-### 6. Verification and rollout
+### 6. Verify and roll out
 
-- Run unit, interop, publishing, and manual GUI tests.
-- Test both WebView engines at multiple application zoom levels and themes.
-- Remove dead CSS/JavaScript and `CodeHighlighter` only after equivalent coverage exists.
+- Remove superseded full-document highlighting, find, and SVG guide code.
+- Run unit, component, publish, and manual GUI tests.
+- Exercise Windows WebView2 and Linux WebKitGTK.
 - Update the implementation roadmap and reliability documentation.
 
-Exit: the new editor is the only production source path and both platform smoke tests pass.
+Exit: the virtualized viewer is the only production source path and both platform smoke tests pass.
 
 ## Test strategy
 
 ### Unit tests
 
 - document-key stability and uniqueness
-- UTF-16 offset-to-position conversion, including CRLF and surrogate pairs
-- decoration bounds, sorting, overlap policy, and invalid-span rejection
-- reference hit lookup
-- cache recency, byte accounting, eviction, and disposal callbacks
-- theme-to-Monaco token/color mapping
+- line indexing for LF, CRLF, empty/final lines, and malformed text
+- UTF-16 offset-to-line/column conversion with surrogate pairs
+- maximum visual columns with tabs and pathological long lines
+- tokenizer state across batch/checkpoint boundaries
+- every current syntax classification and brace-pair behavior
+- reference resolution only for eligible identifier tokens
+- search mapping, overlap policy, case handling, and cancellation
+- cache accounting, recency, eviction, and cancellation callbacks
 
-### JavaScript tests
+### Component tests
 
-- idempotent initialization and disposal
-- model creation, switching, eviction, and URI reuse prevention
-- view-state save/restore
-- click versus Ctrl/Alt/Shift behavior
-- focus range reveal
-- theme switching without recreating models
-- no update when document key and content version are unchanged
+- `ItemsProvider` returns the requested range and total count
+- cancellation prevents stale range results from applying
+- fixed row height and stable keys
+- line rows skip unchanged rerenders
+- click, Ctrl+click, Alt/Shift, and keyboard reference behavior
+- current find/focus decorations appear only on affected visible rows
+- changing theme does not rebuild document models
 
 ### Integration and GUI tests
 
 - publish and launch on `win-x64` and `linux-x64`
-- open, decompile, switch tabs, find, navigate, change theme, close, and restore
-- confirm all resources load offline and no external requests occur
-- confirm editor worker creation and absence of console errors
-- exercise 1 MB, 5 MB, and 25 MB generated C# fixtures plus pathological long lines
-- repeatedly open/close large documents and verify memory returns near its steady-state bound
-- use keyboard-only navigation and screen-reader mode on at least one platform
+- open, decompile, scroll, switch tabs, find, navigate, change theme, close, and restore
+- verify keyboard scrolling by focusing the source viewport
+- exercise 1 MiB, 5 MiB, and 25 MiB generated C# fixtures
+- include very long lines, raw strings, deep braces, and many references
+- repeatedly open/close large documents and verify memory returns to the configured bound
+- confirm the application remains fully offline and has no Node/npm-generated assets
 
 ### Initial performance budgets
 
-Record hardware and WebView versions with results. Refine these budgets after the spike, but do not remove them without replacements:
+Record hardware and WebView versions. Refine these budgets after the first measured prototype, but replace rather than silently remove them.
 
 | Scenario | Initial budget |
 | --- | ---: |
-| Switch to an already-created model | 200 ms to usable input |
+| Switch to a cached document | 200 ms to keyboard/scroll input |
 | Close a large active document | 100 ms UI-thread response |
-| Open a 5 MB cached source document | 2 s to usable input |
-| Scroll a 5 MB document | No repeated UI-thread tasks over 100 ms |
-| Repeat open/close cycle | Memory plateaus within configured cache bounds |
+| Show first viewport of a 5 MiB cached document | 1 s |
+| Scroll a 5 MiB document | No repeated UI-thread tasks over 100 ms |
+| Rendered source rows | Viewport rows plus configured overscan only |
+| Repeat open/close cycle | Memory plateaus within cache limits |
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| Worker URLs fail in one Photino backend | Make the two-platform worker spike the first gate; bundle worker URLs explicitly |
-| Bundle adds excessive size/startup cost | Tree-shake to editor core, C#, and one worker; measure published output before committing |
-| Monaco and existing Blazor shortcuts conflict | Define shortcut ownership and test Ctrl+F, history, zoom, and navigation centrally |
-| Models survive closed tabs | Centralize model ownership and assert disposal in JS tests and diagnostics |
-| Decorations recreate full-document work | Use lexical tokenization for colors and reserve decorations for semantic/application data |
-| Offset drift breaks navigation | Establish UTF-16 and newline contracts with boundary tests |
-| Theme appearance regresses | Create an explicit Monaco theme mapping and screenshot/manual comparisons for all themes |
-| Accessibility regresses | Keep accessibility detection on, provide an ARIA label, and test keyboard/screen-reader behavior |
-| Generated assets become stale | Pin dependencies, commit the lockfile and bundles, and verify regeneration in CI |
+| Fixed-height assumptions drift with zoom/fonts | Derive CSS and `ItemSize` from one setting; measure after zoom and refresh virtualization |
+| Horizontal scrollbar width jumps | Precompute a stable canvas width from maximum visual columns |
+| Stateful tokens render incorrectly when jumping | Resume from tested tokenizer checkpoints rather than tokenizing lines independently |
+| Too many Razor frames per line | Use one line component and render lightweight fragments; benchmark before adding abstractions |
+| Browser selection cannot cross unrendered lines | Document the read-only limitation and provide Copy all source |
+| Scroll restoration races rendering | Restore after render, use a document/version guard, and discard stale requests |
+| Rapid scroll causes excess work | Honor cancellation, tune overscan, cache batches, and avoid Blazor `onscroll` handlers |
+| Reference heuristic remains ambiguous | Keep the token target contract span-ready and replace names in the semantic-navigation milestone |
+| One large document monopolizes memory | Separate token-batch budget from model budget and evict inactive ranges first |
+| Accessibility regresses | Focusable viewport, semantic line numbers, keyboard links, sensible ARIA labels, and screen-reader testing |
 
-## Open decisions for the spike
+## Decisions to validate in the prototype
 
-- Which bundler produces the smallest maintainable deterministic ESM/worker output?
-- Does the current Photino asset origin support module workers on both platforms?
-- Should generated frontend assets remain committed, or should release builds provision Node in CI while local .NET builds consume the last generated bundle?
-- Which Monaco view-state fields should persist across application restarts rather than only tab switches?
-- What cache byte limit is appropriate after measuring representative assemblies?
-- Are built-in C# tokens sufficient to match the existing classification palette, or are a small number of semantic decorations required?
+- Exact line height and overscan at each supported application zoom.
+- Checkpoint interval that balances jump latency and memory.
+- Whether line rendering should use a hand-written `RenderTreeBuilder` component or ordinary Razor loops.
+- Stable horizontal-width cap for pathological generated lines.
+- Cache limits after measuring representative Unity and desktop assemblies.
+- Whether whole-document Copy all is required for initial parity.
+- Which view-state fields, beyond scroll offsets, should persist across application restarts.
 
 ## Primary references
 
-- [Monaco Editor repository and integration guidance](https://github.com/microsoft/monaco-editor)
-- [Monaco editor construction options](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.editor.IStandaloneEditorConstructionOptions.html)
-- [Monaco code-editor API](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.editor.ICodeEditor.html)
-- [Monaco API index](https://microsoft.github.io/monaco-editor/typedoc/index.html)
-- [Monarch tokenizer documentation](https://microsoft.github.io/monaco-editor/monarch-static.html)
-- [CodeMirror system guide](https://codemirror.net/docs/guide/)
-- [Photino.Blazor architecture](https://docs.tryphotino.io/Photino-Blazor)
+- [ASP.NET Core Razor component virtualization (.NET 10)](https://learn.microsoft.com/en-us/aspnet/core/blazor/components/virtualization?view=aspnetcore-10.0)
+- [`Virtualize<TItem>` API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.components.web.virtualization.virtualize-1?view=aspnetcore-10.0)
+- [Blazor rendering performance guidance](https://learn.microsoft.com/en-us/aspnet/core/blazor/performance/rendering?view=aspnetcore-10.0)
+- [Blazor JavaScript interop and element references](https://learn.microsoft.com/en-us/aspnet/core/blazor/javascript-interoperability/call-javascript-from-dotnet?view=aspnetcore-10.0)
 
