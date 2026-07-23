@@ -184,7 +184,7 @@ internal sealed class AssemblySession : IDisposable
     {
         var t = metadata.GetTypeDefinition(h);
         var isEnum = IsEnum(t);
-        return new(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(h):X8}"), TypeDisplayName(t), TreeNodeKind.Type, true, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), Visibility: TypeVisibility(t.Attributes), TypeDisplay: isEnum ? "enum" : TypeKeyword(t.Attributes), NameClassification: isEnum ? "enum" : "type", TypeClassification: "keyword");
+        return new(new NodeId(Descriptor.SessionId, $"type:{MetadataTokens.GetToken(h):X8}"), TypeDisplayName(t), TreeNodeKind.Type, false, new SymbolId(Descriptor.ModuleMvid, MetadataTokens.GetToken(h)), Visibility: TypeVisibility(t.Attributes), TypeDisplay: isEnum ? "enum" : TypeKeyword(t.Attributes), NameClassification: isEnum ? "enum" : "type", TypeClassification: "keyword");
     }
 
     private IReadOnlyList<TreeNodeDescriptor> TypeChildren(TypeDefinitionHandle handle, CancellationToken ct)

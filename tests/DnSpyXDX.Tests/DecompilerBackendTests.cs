@@ -19,6 +19,7 @@ public sealed class DecompilerBackendTests
         var ownNamespace = Assert.Single(namespaceNodes, n => n.Name == "DnSpyXDX.Tests");
         var types = await backend.GetChildrenAsync(ownNamespace.Id);
         var testType = Assert.Single(types, n => n.Name == nameof(DecompilerBackendTests));
+        Assert.False(testType.HasChildren);
         Assert.Equal("public", testType.Visibility);
         Assert.Equal("type", testType.TypeDisplay);
         var members = await backend.GetChildrenAsync(testType.Id);
