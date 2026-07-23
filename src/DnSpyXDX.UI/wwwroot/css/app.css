@@ -124,6 +124,34 @@ select{appearance:none;color-scheme:dark;height:27px;border:1px solid var(--them
 .code-search-focus{animation:code-search-focus 1s ease-out}
 @keyframes code-search-focus{0%,35%{background:var(--theme-color-264f78);box-shadow:inset 0 0 0 1px var(--theme-color-4e87c0)}100%{background:transparent;box-shadow:none}}
 
+/* Fixed-height rows let Blazor virtualize generated source without building a document-sized DOM. */
+.source-viewport{position:relative;width:100%;height:100%;overflow:scroll;outline:none;background:var(--theme-color-0d1118);color:var(--theme-color-f4f7fc);font:13px/20px 'DnSpyXDX Mono',monospace;tab-size:4}
+.source-viewport{scrollbar-width:none}
+.source-viewport::-webkit-scrollbar{display:none;width:0;height:0}
+.source-viewport:focus-visible{box-shadow:inset 0 0 0 1px var(--theme-color-536078)}
+.source-canvas{min-height:100%;padding:12px 0 20px}
+.source-line{display:grid;grid-template-columns:64px minmax(max-content,1fr);align-items:stretch;white-space:pre}
+.source-line-number{position:sticky;left:0;z-index:2;padding-right:14px;background:var(--theme-color-0d1118);color:var(--theme-color-66738a);text-align:right;user-select:none}
+.source-line code{position:relative;display:block;padding-right:22px;font:inherit;color:inherit;white-space:pre}
+.source-brace-guide{position:absolute;top:3px;bottom:3px;border-left:1px dashed var(--theme-color-536078);opacity:.55;pointer-events:none}
+.source-token{margin:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;line-height:inherit;white-space:pre;text-align:left;vertical-align:baseline}
+button.source-token.code-link{text-decoration:none}
+.source-token.code-link:hover{background:var(--theme-color-264f78);box-shadow:inset 0 0 0 1px var(--theme-color-4e87c0)}
+.source-token.code-comment{color:var(--theme-color-647d69);font-style:italic}
+.source-token.code-type{color:var(--theme-color-f08bc6)}
+.source-token.code-method{color:var(--theme-color-dcdcaa)}
+.source-token.code-field{color:var(--theme-color-c586c0)}
+.source-token.code-number{color:var(--theme-color-b5cea8)}
+.source-token.code-keyword{color:var(--theme-syntax-keyword)}
+.source-token.code-name{color:var(--theme-syntax-variable)}
+.source-token.code-constant{color:var(--theme-syntax-constant)}
+.source-token.code-visibility{color:var(--theme-syntax-visibility)}
+.source-token.code-standard-type{color:var(--theme-syntax-standard-type)}
+.source-token.code-string{color:var(--theme-syntax-string)}
+.source-find-match{background:var(--theme-color-6d5f2855)}
+.source-find-match.active{background:var(--theme-color-d89614);color:var(--theme-color-111)}
+.source-preparing{height:100%;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--theme-color-8996aa)}
+
 /* Keep the divider outside the scroll container so restored horizontal scroll
    positions cannot move it away from the panel edge. */
 .explorer-pane{position:relative;flex:0 0 auto;min-width:190px;max-width:65vw;min-height:0}

@@ -130,6 +130,22 @@ window.dnSpyXdx.initHistoryButtons = function (dotNet) {
 window.dnSpyXdx.scrollSourceToTop = function (source) {
   if (source) source.scrollTop = 0;
 };
+window.dnSpyXdx.setSourceScroll = function (source, top, left) {
+  if (!source) return;
+  source.scrollTop = Math.max(0, top || 0);
+  source.scrollLeft = Math.max(0, left || 0);
+};
+window.dnSpyXdx.scrollSourceToLine = async function (source, line, lineHeight) {
+  if (!source) return;
+  const top = Math.max(0, line * lineHeight - source.clientHeight / 3);
+  // Virtualize learns the total spacer height after its first provider result. Wait for that
+  // layout before assigning a deep offset, otherwise the browser clamps scrollTop back to zero.
+  for (let frame = 0; frame < 20; frame++) {
+    source.scrollTop = top;
+    if (source.scrollTop > 0 || top === 0) return;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  }
+};
 window.dnSpyXdx.scrollSourceToToken = function (source, token) {
   const target = source?.querySelector(`[data-token="${token}"]`);
   if (!target) return;
@@ -222,6 +238,11 @@ window.dnSpyXdx.initSourceFind = function (source, dotNet) {
   if (window.dnSpyXdx.sourceFindReady) return;
   window.dnSpyXdx.sourceFindReady = true;
   window.addEventListener("keydown", event => {
+    if (document.activeElement?.closest(".source-find") && (event.key === "Enter" || event.key === "Escape")) {
+      event.preventDefault();
+      window.dnSpyXdx.sourceFindTarget?.dotNet.invokeMethodAsync("SourceFindKey", event.key, event.shiftKey);
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "f") return;
     const target = window.dnSpyXdx.sourceFindTarget;
     if (!target) return;

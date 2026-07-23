@@ -15,6 +15,31 @@ The implementation must remain .NET-centric:
 
 This milestone does not add IL modes, exact semantic-reference production, editing, language servers, or a persistent disk cache.
 
+## Progress
+
+Updated on 2026-07-23. Phases 1–4 are complete and manually verified; implementation is paused before phase 5.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 1. Document indexing | Complete | UTF-16 line indexing, line boundaries, maximum visual width, document identity, and metadata-token locations are implemented and tested. |
+| 2. Tokenizer | Complete | Stateful C# line tokenization, checkpoints, reference targets, brace metadata, and cancellable background processing are implemented and tested. |
+| 3. Virtualized viewer | Complete | The production source view uses `Virtualize<TItem>`, fixed-height rows, overscan, stable width, and hidden scrollbars. Large types are still limited by decompilation time before rendering begins. |
+| 4. Viewer features | Complete | Find, Enter/Shift+Enter/Escape, click/Ctrl+click navigation, declaration reveal/flash, occurrence hover, direct-token hover, visible guides, themes, and syntax colors have passed manual checks. |
+| 5. View state and caches | Not started | Next checkpoint. Implement per-tab scroll restoration and bounded presentation caching, then stop for verification. |
+| 6. Verification and rollout | Not started | Remove superseded code, run platform/publish checks, measure large documents, and update roadmap documentation. |
+
+### Implementation notes
+
+- The implemented component names are `SourceView.razor` and `SourceLineView.razor`; a separate `VirtualizedSourceView.razor` was unnecessary.
+- Browser interop remains limited to focus, keyboard-boundary handling, viewport scrolling, and waiting for virtualization spacers during deep jumps.
+- Scrollbars are visually hidden while wheel, trackpad, and keyboard scrolling remain available.
+- Declaration flashes are guarded by document and symbol identity so unrelated focus/render events do not replay them.
+- Brace guides are neutral rather than rainbow-colored and stop short of their closing-brace row and row edges.
+- Rainbow brace token coloring was removed at user request.
+- ILSpy's `IndentSwitchBody` formatting option is enabled. Case labels are indented inside `switch` braces while their statements retain normal case-body indentation.
+- Whole-document copy has not been added; the need for it remains a phase 4 follow-up decision rather than a blocker for phase 5.
+- Current automated result: 53 tests passing. Linux publish previously passed; repeat publish and platform smoke tests belong to phase 6.
+
 ## Why this design
 
 The current `SourceView.razor` highlights the complete document into one HTML string and inserts a span for every token. JavaScript then scans or measures the full DOM for links, find matches, braces, and block guides. CPU, allocations, DOM size, layout work, and disposal time therefore scale with the complete document.
@@ -285,7 +310,7 @@ Expose counters in debug logging: models, cached batches, estimated bytes, hits,
 
 ## Implementation phases
 
-### 1. Extract document indexing
+### 1. Extract document indexing — complete
 
 - Add `SourceDocumentModel`, document keys, line indexing, max-width calculation, and token-location lookup.
 - Establish UTF-16/newline rules.
@@ -293,7 +318,7 @@ Expose counters in debug logging: models, cached batches, estimated bytes, hits,
 
 Exit: indexing is deterministic, cancellable where appropriate, and does not allocate one string per source line.
 
-### 2. Extract the tokenizer
+### 2. Extract the tokenizer — complete
 
 - Replace full-document HTML generation with line/batch token output.
 - Add tokenizer state and checkpoints.
@@ -302,7 +327,7 @@ Exit: indexing is deterministic, cancellable where appropriate, and does not all
 
 Exit: arbitrary requested ranges render correctly from their nearest checkpoint.
 
-### 3. Introduce the virtualized viewer
+### 3. Introduce the virtualized viewer — complete
 
 - Add `VirtualizedSourceView.razor` and `SourceLineView.razor`.
 - Wire `Virtualize<TItem>` to the document model.
@@ -311,7 +336,7 @@ Exit: arbitrary requested ranges render correctly from their nearest checkpoint.
 
 Exit: DOM size remains proportional to viewport height rather than document length.
 
-### 4. Restore viewer features
+### 4. Restore viewer features — complete
 
 - Port reference navigation and occurrence highlighting.
 - Port C# find and match decoration.
@@ -322,7 +347,7 @@ Exit: DOM size remains proportional to viewport height rather than document leng
 
 Exit: the old source viewer can be removed without losing supported workflows.
 
-### 5. Add view state and bounded caches
+### 5. Add view state and bounded caches — next
 
 - Capture and restore per-tab/document scroll state.
 - Add model and token-batch LRU limits.
@@ -331,7 +356,7 @@ Exit: the old source viewer can be removed without losing supported workflows.
 
 Exit: repeated navigation stays warm while memory plateaus at configured limits.
 
-### 6. Verify and roll out
+### 6. Verify and roll out — pending
 
 - Remove superseded full-document highlighting, find, and SVG guide code.
 - Run unit, component, publish, and manual GUI tests.
@@ -418,4 +443,3 @@ Record hardware and WebView versions. Refine these budgets after the first measu
 - [`Virtualize<TItem>` API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.components.web.virtualization.virtualize-1?view=aspnetcore-10.0)
 - [Blazor rendering performance guidance](https://learn.microsoft.com/en-us/aspnet/core/blazor/performance/rendering?view=aspnetcore-10.0)
 - [Blazor JavaScript interop and element references](https://learn.microsoft.com/en-us/aspnet/core/blazor/javascript-interoperability/call-javascript-from-dotnet?view=aspnetcore-10.0)
-

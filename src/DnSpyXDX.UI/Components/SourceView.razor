@@ -4,57 +4,120 @@
 @if (findOpen)
 {
   <div class="source-find" role="search">
-    <input @ref="findInput" @bind="findQuery" @bind:event="oninput" @bind:after="FindChangedAsync" @onkeydown="FindKeyAsync" placeholder="Find in document" aria-label="Find in document" />
-    <span class="source-find-count">@(matchCount == 0 ? "No results" : $"{matchIndex + 1} of {matchCount}")</span>
-    <button title="Previous match (Shift+Enter)" aria-label="Previous match" disabled="@(matchCount == 0)" @onclick="FindPreviousAsync">↑</button>
-    <button title="Next match (Enter)" aria-label="Next match" disabled="@(matchCount == 0)" @onclick="FindNextAsync">↓</button>
+    <input @ref="findInput" @bind="findQuery" @bind:event="oninput" @bind:after="QueueFind" placeholder="Find in document" aria-label="Find in document" />
+    <span class="source-find-count">@(matches.Count == 0 ? "No results" : $"{matchIndex + 1} of {matches.Count}")</span>
+    <button title="Previous match (Shift+Enter)" aria-label="Previous match" disabled="@(matches.Count == 0)" @onclick="FindPreviousAsync">↑</button>
+    <button title="Next match (Enter)" aria-label="Next match" disabled="@(matches.Count == 0)" @onclick="FindNextAsync">↓</button>
     <button title="Close (Escape)" aria-label="Close find" @onclick="CloseFindAsync">×</button>
   </div>
 }
-<pre class="source" @ref="source"><code>@((MarkupString)CodeHighlighter.Highlight(Document.Text, Document.SymbolLinks))</code></pre>
+@if (model is null)
+{
+  <div class="source-preparing"><span class="decompiling-spinner"></span>Preparing source…</div>
+}
+else
+{
+  <div class="source-viewport" @ref="viewport" tabindex="0" role="region" aria-label="Decompiled source">
+    <div class="source-canvas" style="min-width:@CanvasWidth">
+      <Virtualize @ref="virtualizer" Context="line" ItemsProvider="LoadLinesAsync" ItemSize="LineHeight" OverscanCount="Overscan">
+        <SourceLineView @key="line.Number" Line="line" LineHeight="LineHeight" Matches="FindSpans(line.Number)" ActiveMatchOffset="ActiveMatchOffset" FocusedLine="focusedLine" HoveredSymbol="hoveredSymbol" OnHoverSymbol="HighlightSymbol" OnNavigate="OnNavigate" />
+      </Virtualize>
+    </div>
+  </div>
+}
 
 @code {
+  private const int LineHeight = 20;
+  private const int Overscan = 10;
+  private const int MaximumCanvasColumns = 20_000;
+
   [Parameter, EditorRequired] public DecompilerDocument Document { get; set; } = null!;
   [Parameter] public EventCallback<NavigationRequest> OnNavigate { get; set; }
-  private ElementReference source;
-  private DotNetObjectReference<SourceView>? selfReference;
-  private SymbolId? renderedSymbol;
-  private SymbolId? renderedFocusSymbol;
+
+  private ElementReference viewport;
   private ElementReference findInput;
-  private string findQuery = "";
-  private int matchCount;
+  private Virtualize<SourceTokenizedLine>? virtualizer;
+  private DotNetObjectReference<SourceView>? selfReference;
+  private SourceDocumentModel? model;
+  private SourceDocumentKey? modelKey;
+  private CancellationTokenSource? preparation;
+  private CancellationTokenSource? findDelay;
+  private CancellationTokenSource? focusDelay;
+  private IReadOnlyList<int> matches = [];
+  private IReadOnlyDictionary<int, IReadOnlyList<SourceFindSpan>> findSpans = new Dictionary<int, IReadOnlyList<SourceFindSpan>>();
   private int matchIndex = -1;
+  private string findQuery = "";
   private bool findOpen;
   private bool focusFind;
+  private bool initializeBrowser;
+  private bool revealFocus;
+  private (SourceDocumentKey Document, SymbolId Symbol)? revealedFocus;
+  private int focusedLine = -1;
+  private string? hoveredSymbol;
+
+  private string CanvasWidth => $"max(100%, calc(74px + {Math.Min(model?.MaximumVisualColumns ?? 0, MaximumCanvasColumns)}ch))";
+  private int ActiveMatchOffset => matchIndex >= 0 && matchIndex < matches.Count ? matches[matchIndex] : -1;
+
+  protected override async Task OnParametersSetAsync()
+  {
+    var key = SourceDocumentKey.Create(Document);
+    if (modelKey == key && model?.Text == Document.Text)
+    {
+      revealFocus = Document.FocusSymbol is { } focus && revealedFocus != (key, focus);
+      return;
+    }
+
+    preparation?.Cancel();
+    preparation?.Dispose();
+    preparation = new CancellationTokenSource();
+    var token = preparation.Token;
+    model = null;
+    modelKey = key;
+    matches = [];
+    findSpans = new Dictionary<int, IReadOnlyList<SourceFindSpan>>();
+    matchIndex = -1;
+    try
+    {
+      var prepared = await Task.Run(() => SourceDocumentModel.Create(key, Document.Text, token), token);
+      token.ThrowIfCancellationRequested();
+      model = prepared;
+      initializeBrowser = true;
+      revealFocus = Document.FocusSymbol is { } focus && revealedFocus != (key, focus);
+    }
+    catch (OperationCanceledException) { }
+  }
 
   protected override async Task OnAfterRenderAsync(bool firstRender)
   {
-    if (firstRender)
+    if (model is null) return;
+    if (selfReference is null) selfReference = DotNetObjectReference.Create(this);
+    if (initializeBrowser)
     {
-      selfReference = DotNetObjectReference.Create(this);
-      await JS.InvokeVoidAsync("dnSpyXdx.initSourceLinks", source, selfReference);
-      await JS.InvokeVoidAsync("dnSpyXdx.initSourceFind", source, selfReference);
-      await JS.InvokeVoidAsync("dnSpyXdx.initBlockStructure", source);
+      initializeBrowser = false;
+      await JS.InvokeVoidAsync("dnSpyXdx.initSourceFind", viewport, selfReference);
+      await JS.InvokeVoidAsync("dnSpyXdx.setSourceScroll", viewport, 0, 0);
     }
-    // The pre element is reused across documents, so its scroll offset has to be reset by hand
-    // when a different symbol is shown.
-    if (renderedSymbol != Document.Symbol)
+    if (revealFocus && Document.FocusSymbol is { } focus && model.TryGetTokenLocation(focus.MetadataToken, out var position))
     {
-      renderedSymbol = Document.Symbol;
-      await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToTop", source);
-      await JS.InvokeVoidAsync("dnSpyXdx.renderBlockStructure", source);
-      if (findOpen) await FindChangedAsync();
-    }
-    if (renderedFocusSymbol != Document.FocusSymbol)
-    {
-      renderedFocusSymbol = Document.FocusSymbol;
-      if (renderedFocusSymbol is { } focus) await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToToken", source, focus.MetadataToken);
+      revealFocus = false;
+      revealedFocus = (model.Key, focus);
+      focusedLine = Math.Min(position.Line + 1, model.LineCount - 1);
+      if (virtualizer is not null) await virtualizer.RefreshDataAsync();
+      await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToLine", viewport, focusedLine, LineHeight);
+      focusDelay?.Cancel();
+      focusDelay?.Dispose();
+      focusDelay = new CancellationTokenSource();
+      _ = ClearFocusAsync(focusDelay.Token);
     }
     if (focusFind) { focusFind = false; await findInput.FocusAsync(); }
   }
 
-  [JSInvokable]
-  public Task NavigateToToken(int token, bool newTab) => OnNavigate.InvokeAsync(new NavigationRequest(new SymbolId(Document.Symbol.ModuleMvid, token), newTab));
+  private async ValueTask<ItemsProviderResult<SourceTokenizedLine>> LoadLinesAsync(ItemsProviderRequest request)
+  {
+    if (model is null) return new ItemsProviderResult<SourceTokenizedLine>([], 0);
+    var lines = await model.TokenizeLinesAsync(request.StartIndex, request.Count, Document.SymbolLinks, request.CancellationToken);
+    return new ItemsProviderResult<SourceTokenizedLine>(lines, model.LineCount);
+  }
 
   [JSInvokable]
   public void OpenFind()
@@ -64,44 +127,152 @@
     StateHasChanged();
   }
 
-  private async Task FindChangedAsync()
+  private void QueueFind()
   {
-    var result = await JS.InvokeAsync<SourceFindResult>("dnSpyXdx.findInSource", source, findQuery, 0);
-    (matchCount, matchIndex) = (result.Count, result.Index);
-    StateHasChanged();
+    findDelay?.Cancel();
+    findDelay?.Dispose();
+    findDelay = new CancellationTokenSource();
+    _ = FindAfterDelayAsync(findDelay.Token);
+  }
+
+  private async Task FindAfterDelayAsync(CancellationToken token)
+  {
+    try { await Task.Delay(150, token); await FindAsync(token); }
+    catch (OperationCanceledException) { }
+  }
+
+  private async Task FindAsync(CancellationToken token)
+  {
+    if (model is null || string.IsNullOrEmpty(findQuery))
+    {
+      matches = [];
+      findSpans = new Dictionary<int, IReadOnlyList<SourceFindSpan>>();
+      matchIndex = -1;
+    }
+    else
+    {
+      var text = model.Text;
+      var query = findQuery;
+      matches = await Task.Run<IReadOnlyList<int>>(() =>
+      {
+        var found = new List<int>();
+        for (var offset = 0; offset <= text.Length - query.Length;)
+        {
+          token.ThrowIfCancellationRequested();
+          var match = text.IndexOf(query, offset, StringComparison.OrdinalIgnoreCase);
+          if (match < 0) break;
+          found.Add(match);
+          offset = match + Math.Max(1, query.Length);
+        }
+        return found;
+      }, token);
+      matchIndex = matches.Count == 0 ? -1 : 0;
+      findSpans = BuildFindSpans(model, matches, query.Length);
+    }
+    await InvokeAsync(async () =>
+    {
+      if (virtualizer is not null) await virtualizer.RefreshDataAsync();
+      StateHasChanged();
+      if (matchIndex >= 0) await RevealMatchAsync();
+    });
   }
 
   private Task FindNextAsync() => MoveFindAsync(1);
   private Task FindPreviousAsync() => MoveFindAsync(-1);
+
   private async Task MoveFindAsync(int direction)
   {
-    var result = await JS.InvokeAsync<SourceFindResult>("dnSpyXdx.findInSource", source, findQuery, matchIndex + direction);
-    (matchCount, matchIndex) = (result.Count, result.Index);
+    if (matches.Count == 0) return;
+    matchIndex = (matchIndex + direction + matches.Count) % matches.Count;
+    await RevealMatchAsync();
+    StateHasChanged();
   }
 
-  private async Task FindKeyAsync(KeyboardEventArgs e)
+  private async Task RevealMatchAsync()
   {
-    if (e.Key == "Enter") await MoveFindAsync(e.ShiftKey ? -1 : 1);
-    else if (e.Key == "Escape") await CloseFindAsync();
+    if (model is null || matchIndex < 0) return;
+    var line = model.GetPosition(matches[matchIndex]).Line;
+    await JS.InvokeVoidAsync("dnSpyXdx.scrollSourceToLine", viewport, line, LineHeight);
+  }
+
+  [JSInvokable]
+  public async Task SourceFindKey(string key, bool shift)
+  {
+    if (key == "Enter") await MoveFindAsync(shift ? -1 : 1);
+    else if (key == "Escape") await CloseFindAsync();
   }
 
   private async Task CloseFindAsync()
   {
+    findDelay?.Cancel();
     findOpen = false;
     findQuery = "";
-    matchCount = 0;
+    matches = [];
+    findSpans = new Dictionary<int, IReadOnlyList<SourceFindSpan>>();
     matchIndex = -1;
-    await JS.InvokeVoidAsync("dnSpyXdx.clearSourceFind", source);
+    if (virtualizer is not null) await virtualizer.RefreshDataAsync();
+    await InvokeAsync(StateHasChanged);
+  }
+
+  private void HighlightSymbol(string? symbol)
+  {
+    if (hoveredSymbol == symbol) return;
+    hoveredSymbol = symbol;
+    StateHasChanged();
+  }
+
+  private IReadOnlyList<SourceFindSpan> FindSpans(int line) =>
+    findSpans.TryGetValue(line, out var spans) ? spans : [];
+
+  private static IReadOnlyDictionary<int, IReadOnlyList<SourceFindSpan>> BuildFindSpans(SourceDocumentModel document, IReadOnlyList<int> offsets, int length)
+  {
+    var byLine = new Dictionary<int, List<SourceFindSpan>>();
+    foreach (var offset in offsets)
+    {
+      var remaining = length;
+      var position = document.GetPosition(offset);
+      var line = position.Line;
+      var column = position.Column;
+      while (remaining > 0 && line < document.LineCount)
+      {
+        var available = document.GetLine(line).Length - column;
+        var take = Math.Min(remaining, Math.Max(0, available));
+        if (take > 0)
+        {
+          if (!byLine.TryGetValue(line, out var spans)) byLine[line] = spans = [];
+          spans.Add(new SourceFindSpan(column, take, offset));
+          remaining -= take;
+        }
+        if (remaining == 0) break;
+        line++;
+        column = 0;
+        // A multi-line query consumes at least one newline code unit between source rows.
+        remaining = Math.Max(0, remaining - 1);
+      }
+    }
+    return byLine.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<SourceFindSpan>)pair.Value);
+  }
+
+  private async Task ClearFocusAsync(CancellationToken token)
+  {
+    try
+    {
+      await Task.Delay(1_200, token);
+      await InvokeAsync(() => { focusedLine = -1; StateHasChanged(); });
+    }
+    catch (OperationCanceledException) { }
   }
 
   public async ValueTask DisposeAsync()
   {
-    try { await JS.InvokeVoidAsync("dnSpyXdx.disposeBlockStructure", source); }
-    catch (JSDisconnectedException) { }
-    try { await JS.InvokeVoidAsync("dnSpyXdx.disposeSourceFind", source); }
+    preparation?.Cancel();
+    preparation?.Dispose();
+    findDelay?.Cancel();
+    findDelay?.Dispose();
+    focusDelay?.Cancel();
+    focusDelay?.Dispose();
+    try { await JS.InvokeVoidAsync("dnSpyXdx.disposeSourceFind", viewport); }
     catch (JSDisconnectedException) { }
     selfReference?.Dispose();
   }
-
-  private sealed record SourceFindResult(int Count, int Index);
 }
