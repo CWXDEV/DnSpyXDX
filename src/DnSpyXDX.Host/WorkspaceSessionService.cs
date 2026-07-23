@@ -7,6 +7,10 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly Dictionary<string, CancellationTokenSource> documentRestores = [];
+    private readonly HashSet<string> cancelledDocuments = [];
+    private readonly HashSet<string> pendingDocumentTabs = [];
+    private readonly object restoreGate = new();
     private SessionSnapshot? pendingRestore;
     public UiSessionState UiState { get; set; } = new();
     private string SessionPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DnSpyXDX", "session.json");
@@ -45,21 +49,53 @@ public sealed class WorkspaceSessionService(IDecompilerBackend backend, Workspac
             var assembly = backend.Assemblies.FirstOrDefault(a => a.ModuleMvid == saved.Symbol.ModuleMvid);
             if (assembly is null) continue;
             var title = string.IsNullOrWhiteSpace(saved.Title) ? $"0x{saved.Symbol.MetadataToken:X8}" : saved.Title;
-            documents.Add((saved, workspace.OpenLoading(saved.Symbol, title, saved.AssemblyName ?? assembly.Name, newTab: true)));
+            var tabId = workspace.OpenLoading(saved.Symbol, title, saved.AssemblyName ?? assembly.Name, newTab: true);
+            documents.Add((saved, tabId));
+            lock (restoreGate) pendingDocumentTabs.Add(tabId);
         }
         if (workspace.Tabs.ElementAtOrDefault(snapshot.ActiveIndex) is { } active) workspace.Activate(active.Id);
 
         foreach (var (saved, tabId) in documents)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            CancellationTokenSource restore;
+            lock (restoreGate)
+            {
+                if (cancelledDocuments.Remove(tabId) || workspace.Tabs.All(tab => tab.Id != tabId))
+                {
+                    pendingDocumentTabs.Remove(tabId);
+                    continue;
+                }
+                restore = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                documentRestores[tabId] = restore;
+            }
             try
             {
-                var document = await backend.DecompileAsync(saved.Symbol, cancellationToken);
+                var document = await backend.DecompileAsync(saved.Symbol, restore.Token);
                 workspace.CompleteLoading(tabId, document);
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
             catch (Exception ex) when (ex is not OperationCanceledException) { workspace.FailLoading(tabId, ex.Message); }
+            finally
+            {
+                lock (restoreGate)
+                {
+                    documentRestores.Remove(tabId);
+                    pendingDocumentTabs.Remove(tabId);
+                }
+                restore.Dispose();
+            }
         }
         pendingRestore = null;
+    }
+
+    public void CancelDocumentRestore(string tabId)
+    {
+        lock (restoreGate)
+        {
+            if (documentRestores.TryGetValue(tabId, out var restore)) restore.Cancel();
+            else if (pendingDocumentTabs.Contains(tabId)) cancelledDocuments.Add(tabId);
+        }
     }
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)

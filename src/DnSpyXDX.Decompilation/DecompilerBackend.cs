@@ -72,10 +72,18 @@ public sealed class DecompilerBackend : IDecompilerBackend
         return Task.Run(() => session.GetDeclaringType(symbol, cancellationToken), cancellationToken);
     }
 
-    public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default) => Task.Run<IReadOnlyList<SearchResult>>(() =>
+    public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default, IProgress<IReadOnlyList<SearchResult>>? progress = null) => Task.Run<IReadOnlyList<SearchResult>>(() =>
     {
         if (string.IsNullOrWhiteSpace(query)) return [];
-        return sessions.Values.SelectMany(s => s.Search(query, cancellationToken)).Take(500).ToArray();
+        var found = new List<SearchResult>();
+        foreach (var result in sessions.Values.SelectMany(s => s.Search(query, cancellationToken)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            found.Add(result);
+            if (found.Count % 50 == 0) progress?.Report(found.ToArray());
+        }
+        progress?.Report(found);
+        return found;
     }, cancellationToken);
 
     public bool TryGetAssembly(Guid sessionId, out AssemblyDescriptor? assembly)

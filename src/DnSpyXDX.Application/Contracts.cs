@@ -10,7 +10,7 @@ public interface IDecompilerBackend : IAsyncDisposable
     Task<DecompilerDocument> DecompileAsync(SymbolId symbol, CancellationToken cancellationToken = default);
     Task<SymbolId> GetDeclaringTypeAsync(SymbolId symbol, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<NodeId>> GetPathAsync(SymbolId symbol, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default, IProgress<IReadOnlyList<SearchResult>>? progress = null);
     bool TryGetAssembly(Guid sessionId, out AssemblyDescriptor? assembly);
 }
 
@@ -31,6 +31,7 @@ public interface IWorkspaceSessionService
     Task LoadAsync(CancellationToken cancellationToken = default);
     Task RestoreAssembliesAsync(CancellationToken cancellationToken = default);
     Task RestoreDocumentsAsync(CancellationToken cancellationToken = default);
+    void CancelDocumentRestore(string tabId);
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
 

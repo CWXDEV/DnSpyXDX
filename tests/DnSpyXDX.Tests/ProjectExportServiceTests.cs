@@ -50,7 +50,7 @@ public sealed class ProjectExportServiceTests
         public Task<DecompilerDocument> DecompileAsync(SymbolId symbol, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SymbolId> GetDeclaringTypeAsync(SymbolId symbol, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<NodeId>> GetPathAsync(SymbolId symbol, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default, IProgress<IReadOnlyList<SearchResult>>? progress = null) => throw new NotSupportedException();
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
