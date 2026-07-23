@@ -62,4 +62,5 @@ public sealed record UiSessionState(
     bool SearchOpen = false,
     string SearchKind = "All",
     string SearchScope = "All",
-    int ZoomPercent = 100);
+    int ZoomPercent = 100,
+    string ThemeId = "default");

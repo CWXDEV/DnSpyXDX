@@ -93,6 +93,7 @@
     <div class="modal-dismiss" @onclick="CloseSettings"></div>
     <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <header><strong id="settings-title">Settings</strong><button title="Close settings" aria-label="Close settings" @onclick="CloseSettings">×</button></header>
+      <div class="settings-row"><span><strong>Theme</strong><small>Application and code colours</small></span><select class="settings-select" value="@themeId" @onchange="ThemeChangedAsync">@foreach (var theme in Themes.All) { <option value="@theme.Id">@theme.Name</option> }</select></div>
       <div class="settings-row"><span><strong>Application zoom</strong><small>Scale the entire interface</small></span><div class="application-zoom"><button aria-label="Zoom out" disabled="@(zoomPercent <= MinimumZoom)" @onclick="() => ChangeApplicationZoom(-1)">−</button><button class="zoom-percent" aria-label="Reset zoom to 100%" @onclick="ResetApplicationZoom">@zoomPercent%</button><button aria-label="Zoom in" disabled="@(zoomPercent >= MaximumZoom)" @onclick="() => ChangeApplicationZoom(1)">+</button></div></div>
     </section>
   }
@@ -126,6 +127,7 @@
   private const int MaximumZoom = 200;
   private const int ZoomStep = 10;
   private int zoomPercent = 100;
+  private string themeId = Themes.DefaultId;
   private AssemblyDescriptor? contextAssembly;
   private int contextMenuX;
   private int contextMenuY;
@@ -145,6 +147,7 @@
       searchKind = ui.SearchKind;
       searchScope = ui.SearchScope;
       zoomPercent = ui.ZoomPercent <= 0 ? 100 : Math.Clamp(ui.ZoomPercent, MinimumZoom, MaximumZoom);
+      themeId = Themes.Normalize(ui.ThemeId);
       Zoom.SetZoom(zoomPercent);
       if (Workspace.ActiveTab is { } active)
       {
@@ -158,10 +161,10 @@
       Workspace.SetBusy(false, Backend.Assemblies.Count > 0 ? "Session restored" : "Ready");
     }
   }
-  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
+  protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) { selfReference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("dnSpyXdx.applyTheme", themeId); await JS.InvokeVoidAsync("dnSpyXdx.initExplorerResize", explorer, selfReference); await JS.InvokeVoidAsync("dnSpyXdx.initHistoryButtons", selfReference); } if (searchOpen) await JS.InvokeVoidAsync("dnSpyXdx.initSearchResize", searchPanel, selfReference); if (focusSearch) { focusSearch = false; await searchInput.FocusAsync(); } }
   private void Refresh() { InvokeAsync(StateHasChanged); if (!restoring) ScheduleSave(); }
   private void ScheduleSave() { saveDelay?.Cancel(); saveDelay?.Dispose(); saveDelay = new CancellationTokenSource(); var token = saveDelay.Token; _ = SaveAfterDelayAsync(token); }
-  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
+  private async Task SaveAfterDelayAsync(CancellationToken token) { try { await Task.Delay(350, token); Session.UiState = new UiSessionState(explorerWidth, searchPanelHeight, searchOpen, searchKind, searchScope, zoomPercent, themeId); await Session.SaveAsync(token); } catch (OperationCanceledException) { } }
   private async Task OpenAsync() { var path = await Dialogs.OpenAssemblyAsync(); if (path is null) return; Workspace.SetBusy(true, "Opening assembly…"); try { await Backend.OpenAsync(path); Workspace.SetBusy(false, $"Opened {Path.GetFileName(path)}"); } catch (Exception ex) { Workspace.SetBusy(false, ex.Message); } }
   private void ToggleMenu() => menuOpen = !menuOpen;
   private void CloseMenu() => menuOpen = false;
@@ -275,6 +278,12 @@
   private async Task RunSearchAsync(CancellationToken token) { var found = await Backend.SearchAsync(query, token); token.ThrowIfCancellationRequested(); var selectedMvid = SelectedAssemblyMvid; results = found.Where(r => searchKind == "All" || r.Kind == searchKind).Where(r => searchScope == "All" || selectedMvid is not null && r.Symbol.ModuleMvid == selectedMvid).ToArray(); searchOpen = true; StateHasChanged(); }
   private void CloseSearch() { searchOpen = false; ScheduleSave(); StateHasChanged(); }
   private void LayoutOptionChanged() => ScheduleSave();
+  private async Task ThemeChangedAsync(ChangeEventArgs e)
+  {
+    themeId = Themes.Normalize(e.Value?.ToString());
+    await JS.InvokeVoidAsync("dnSpyXdx.applyTheme", themeId);
+    ScheduleSave();
+  }
   private void CollapseAllNodes() => treeCollapseVersion++;
   [JSInvokable] public void ExplorerResized(double width) { explorerWidth = width; ScheduleSave(); }
   [JSInvokable] public void SearchPanelResized(double height) { searchPanelHeight = height; ScheduleSave(); }

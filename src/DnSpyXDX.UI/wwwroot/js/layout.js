@@ -1,4 +1,7 @@
 window.dnSpyXdx = window.dnSpyXdx || {};
+window.dnSpyXdx.applyTheme = function (theme) {
+  document.documentElement.dataset.theme = theme || "default";
+};
 window.dnSpyXdx.initExplorerResize = function (explorer, dotNet) {
   if (!explorer || explorer.dataset.resizeReady) return;
   explorer.dataset.resizeReady = "true";
