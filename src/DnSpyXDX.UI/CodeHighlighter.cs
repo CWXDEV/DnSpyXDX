@@ -9,6 +9,7 @@ public static partial class CodeHighlighter
 {
     private static readonly HashSet<string> Visibility = ["public", "private", "protected", "internal"];
     private static readonly HashSet<string> BuiltInTypes = ["bool", "byte", "char", "decimal", "double", "float", "int", "long", "object", "sbyte", "short", "string", "uint", "ulong", "ushort", "void", "dynamic"];
+    private static readonly HashSet<string> Constants = ["false", "null", "true"];
     private static readonly HashSet<string> Keywords = ["abstract", "as", "async", "await", "base", "break", "case", "catch", "checked", "class", "const", "continue", "default", "delegate", "do", "else", "enum", "event", "explicit", "extern", "false", "finally", "fixed", "for", "foreach", "get", "if", "implicit", "in", "interface", "is", "lock", "namespace", "new", "null", "operator", "out", "override", "params", "readonly", "record", "ref", "required", "return", "sealed", "set", "sizeof", "stackalloc", "static", "struct", "switch", "this", "throw", "true", "try", "typeof", "unchecked", "unsafe", "using", "virtual", "volatile", "while", "yield"];
 
     public static string Highlight(string source, IReadOnlyDictionary<string, SymbolId?>? symbolLinks = null)
@@ -73,6 +74,7 @@ public static partial class CodeHighlighter
     {
         var word = match.Value;
         if (Visibility.Contains(word)) return "code-visibility";
+        if (Constants.Contains(word)) return "code-constant";
         if (Keywords.Contains(word)) return "code-keyword";
         var next = match.Index + match.Length;
         while (next < source.Length && char.IsWhiteSpace(source[next])) next++;

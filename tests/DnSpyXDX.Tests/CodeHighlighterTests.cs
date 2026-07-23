@@ -83,6 +83,19 @@ public sealed class CodeHighlighterTests
     }
 
     [Fact]
+    public void Distinguishes_constants_from_control_keywords()
+    {
+        var html = CodeHighlighter.Highlight("public bool value = false; if (value) return true;");
+
+        Assert.Contains("code-visibility\">public", html, StringComparison.Ordinal);
+        Assert.Contains("code-standard-type\">bool", html, StringComparison.Ordinal);
+        Assert.Contains("code-constant\">false", html, StringComparison.Ordinal);
+        Assert.Contains("code-keyword\">if", html, StringComparison.Ordinal);
+        Assert.Contains("code-keyword\">return", html, StringComparison.Ordinal);
+        Assert.Contains("code-constant\">true", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Colors_nested_brace_pairs_in_sequence_and_ignores_string_braces()
     {
         var html = CodeHighlighter.Highlight("void Run() { if (true) { var text = \"{ignored}\"; } }");
