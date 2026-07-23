@@ -1,0 +1,93 @@
+<div class="source-line @(IsFocused ? "code-search-focus" : null)" style="height:@($"{LineHeight}px")" role="row">
+  <span class="source-line-number" aria-hidden="true">@(Line.Number + 1)</span>
+  <code>
+    @foreach (var brace in VisibleGuides())
+    {
+      <i class="source-brace-guide" style="left:@($"calc({brace.Column}ch + .5ch)")" aria-hidden="true"></i>
+    }
+    @foreach (var segment in Segments())
+    {
+      var text = Line.Text.Substring(segment.Start, segment.Length);
+      var matchClass = segment.IsActiveMatch ? "source-find-match active" : segment.IsMatch ? "source-find-match" : null;
+      if (segment.Token.Target is { } target)
+      {
+        <button type="button" class="source-token @CssClass(segment.Token) code-link @matchClass @(IsHovered(segment.Token) ? "code-link-active" : null)" title="Go to @segment.Token.SymbolName" @onclick="e => NavigateAsync(target, e)" @onmouseenter="() => HoverAsync(segment.Token.SymbolName)" @onmouseleave="() => HoverAsync(null)">@text</button>
+      }
+      else
+      {
+        <span class="source-token @CssClass(segment.Token) @(segment.Token.SymbolName is null ? null : "code-link") @matchClass @(IsHovered(segment.Token) ? "code-link-active" : null)" @onmouseenter="() => HoverAsync(segment.Token.SymbolName)" @onmouseleave="() => HoverAsync(null)">@text</span>
+      }
+    }
+  </code>
+</div>
+
+@code {
+  private const int MaximumGuides = 32;
+
+  [Parameter, EditorRequired] public SourceTokenizedLine Line { get; set; } = null!;
+  [Parameter] public EventCallback<NavigationRequest> OnNavigate { get; set; }
+  [Parameter] public IReadOnlyList<SourceFindSpan> Matches { get; set; } = [];
+  [Parameter] public int ActiveMatchOffset { get; set; } = -1;
+  [Parameter] public int FocusedLine { get; set; } = -1;
+  [Parameter] public string? HoveredSymbol { get; set; }
+  [Parameter] public EventCallback<string?> OnHoverSymbol { get; set; }
+  [Parameter] public int LineHeight { get; set; } = 20;
+
+  private bool IsFocused => FocusedLine == Line.Number;
+  private bool IsHovered(SourceToken token) => token.SymbolName is not null && token.SymbolName == HoveredSymbol;
+  private Task HoverAsync(string? symbol) => OnHoverSymbol.InvokeAsync(symbol);
+
+  private Task NavigateAsync(SymbolId target, MouseEventArgs e) =>
+    e.AltKey || e.ShiftKey ? Task.CompletedTask : OnNavigate.InvokeAsync(new NavigationRequest(target, e.CtrlKey || e.MetaKey));
+
+  private IEnumerable<SourceBrace> VisibleGuides()
+  {
+    var closingPairs = Line.Tokens
+      .Where(token => token.Kind == SourceTokenKind.Brace && token.BracePair is not null && Line.Text[token.Start] == '}')
+      .Select(token => token.BracePair!.Value)
+      .ToHashSet();
+    return Line.StartState.Braces.Take(MaximumGuides).Where(brace => !closingPairs.Contains(brace.Pair));
+  }
+
+  private IEnumerable<RenderedSegment> Segments()
+  {
+    foreach (var token in Line.Tokens)
+    {
+      var boundaries = new SortedSet<int> { token.Start, token.Start + token.Length };
+      foreach (var match in Matches)
+      {
+        var start = Math.Max(token.Start, match.Start);
+        var end = Math.Min(token.Start + token.Length, match.Start + match.Length);
+        if (start < end) { boundaries.Add(start); boundaries.Add(end); }
+      }
+      var points = boundaries.ToArray();
+      for (var index = 0; index < points.Length - 1; index++)
+      {
+        var start = points[index];
+        var length = points[index + 1] - start;
+        var match = Matches.FirstOrDefault(candidate => start >= candidate.Start && start < candidate.Start + candidate.Length);
+        var isMatch = match.Length > 0;
+        yield return new RenderedSegment(token, start, length, isMatch, isMatch && match.DocumentOffset == ActiveMatchOffset);
+      }
+    }
+  }
+
+  private static string? CssClass(SourceToken token) => token.Kind switch
+  {
+    SourceTokenKind.Comment => "code-comment",
+    SourceTokenKind.String => "code-string",
+    SourceTokenKind.Number => "code-number",
+    SourceTokenKind.Keyword => "code-keyword",
+    SourceTokenKind.Visibility => "code-visibility",
+    SourceTokenKind.BuiltInType => "code-standard-type",
+    SourceTokenKind.Constant => "code-constant",
+    SourceTokenKind.Type => "code-type",
+    SourceTokenKind.Method => "code-method",
+    SourceTokenKind.Field => "code-field",
+    SourceTokenKind.Identifier => "code-name",
+    SourceTokenKind.Brace => "code-brace",
+    _ => null
+  };
+
+  private readonly record struct RenderedSegment(SourceToken Token, int Start, int Length, bool IsMatch, bool IsActiveMatch);
+}

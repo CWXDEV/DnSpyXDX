@@ -52,7 +52,7 @@ public sealed class DecompilerBackendTests
 
         Assert.NotNull(document.SymbolLinks);
         Assert.Equal(testType.Symbol!.Value, document.SymbolLinks![nameof(DecompilerBackendTests)]);
-        Assert.True(document.SymbolLinks.ContainsKey(nameof(CodeHighlighterTests)));
+        Assert.True(document.SymbolLinks.ContainsKey(nameof(SourceTokenizerTests)));
         // Members of the type on screen are linkable too, scoped to that type.
         Assert.True(document.SymbolLinks.ContainsKey(nameof(Opens_browses_and_decompiles_a_managed_assembly)));
     }
@@ -170,6 +170,21 @@ public sealed class DecompilerBackendTests
         }
     }
 
+    [Fact]
+    public async Task Indents_switch_labels_inside_the_switch_body()
+    {
+        await using var backend = new DecompilerBackend();
+        var assembly = await backend.OpenAsync(typeof(DecompilerBackendTests).Assembly.Location);
+        var namespaces = (await backend.GetChildrenAsync(assembly.RootNode)).Single(n => n.Name == "Namespaces");
+        var ownNamespace = (await backend.GetChildrenAsync(namespaces.Id)).Single(n => n.Name == "DnSpyXDX.Tests");
+        var sampleType = (await backend.GetChildrenAsync(ownNamespace.Id)).Single(n => n.Name == nameof(SwitchFormattingSample));
+
+        var document = await backend.DecompileAsync(sampleType.Symbol!.Value);
+
+        Assert.Contains("\n\t\t\tcase 1:\n", document.Text, StringComparison.Ordinal);
+        Assert.Contains("\n\t\t\t\tValue = 10;\n", document.Text, StringComparison.Ordinal);
+    }
+
     private static int Group(TreeNodeKind kind) => kind switch
     {
         TreeNodeKind.Constructor or TreeNodeKind.Method => 0,
@@ -203,5 +218,26 @@ public sealed class GenericSample<TItem>
     public TItem? Field;
     public event Action<TItem>? Changed;
     public TResult? Convert<TResult>() => default;
+}
+
+public sealed class SwitchFormattingSample
+{
+    public int Value;
+
+    public void Apply(int value)
+    {
+        switch (value)
+        {
+            case 1:
+                Value = 10;
+                break;
+            case 2:
+                Value = 20;
+                break;
+            default:
+                Value = 0;
+                break;
+        }
+    }
 }
 #pragma warning restore CS0067, CS0649

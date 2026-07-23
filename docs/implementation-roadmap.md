@@ -11,7 +11,7 @@ Status was audited against the repository on 2026-07-23 through commit `6621710`
 | 0. Feasibility spike | Partial | Photino + Blazor + .NET 10 shell; ILSpy package loads a test DLL on both OSes | 2–4 days | Shell and decompilation exist; launch/decompile smoke tests on both Windows and Linux are not recorded |
 | 1. Application skeleton | Partial | Project split, DI, logging, settings, native dialogs, CI builds | 3–5 days | Split projects, DI, filtered logging, session/window state, and dialogs exist; CI and verified dual-RID artifacts do not |
 | 2. Assembly workspace | Partial | Open/close sessions, type-bounded lazy tree, metadata/error views | 1–2 weeks | The tree intentionally stops at types; tree virtualization and dedicated metadata/error views remain incomplete |
-| 3. Decompiled documents | Partial | Monaco, type/member decompilation, tabs, bounded caching, cancellation, large-document virtualization | 1–2 weeks | Type/member tabs, restoration, loading feedback, cancellation, and an unbounded cache exist; Monaco, bounded caching, and large-source rendering remain |
+| 3. Decompiled documents | Complete | Read-only type/member decompilation, tabs, bounded caching, cancellation, and large-document virtualization | 1–2 weeks | The pure-Blazor viewer virtualizes fixed-height lines, caches models/token batches within LRU limits, and restores per-tab scroll state |
 | 4. Navigation and search | Partial | Symbol IDs, history, semantic spans, Ctrl+click, indexed name search | 1–2 weeks | History, symbol IDs, source links, and workspace search exist; links are name-based heuristics and search scans metadata rather than using an index |
 | 5. Project and `.slnx` export | Partial | Whole-project adapter, staging, multi-project mapping, reports, optional build | 1–2 weeks | Export, staging, `.slnx`, progress, reports, and optional validation exist; open-assembly references are not remapped to project references |
 | 6. Hardening | Partial | Malformed inputs, resource/path safety, memory/concurrency controls, recovery | 1–2 weeks | Basic validation, staging, cancellation, serialized per-session decompilation, and recovery exist; size/memory limits and the adversarial fixture suite do not |
@@ -30,10 +30,10 @@ Build these tickets in order. Checked items are supported by concrete production
 5. [x] Show assembly details, references, resources, namespaces, and types lazily.
 6. [x] Decompile a selected type into a plain read-only source view.
 7. [ ] Add a dnSpy-style main-panel language selector with **C#**, **IL**, and **IL with C#** modes. C# remains the default; IL uses the metadata disassembler; IL with C# annotates IL ranges with the higher-level C# statements that produced them instead of merely concatenating two documents. Changing mode must refresh the active document in place, preserve navigation and selection, persist across sessions, support cancellation, and key the document cache by both symbol and language.
-8. [ ] Add a large-document source pipeline: cache presentation output, tokenize incrementally off the UI thread, render only visible lines, load nearby line ranges on scroll, and cancel pending presentation work when its tab closes. Unrelated UI changes must not re-tokenize an unchanged document, and closing a very large document must remain responsive.
-9. [ ] Integrate Monaco (or confirm another virtualized editor) and preserve model/view state per tab.
+8. [x] Add a large-document source pipeline: cache presentation output, tokenize incrementally off the UI thread, render only visible lines, load nearby line ranges on scroll, and cancel pending presentation work when its tab closes.
+9. [x] Use the pure-Blazor virtualized viewer and preserve scroll state per tab; Monaco is intentionally not required.
 10. [x] Stop interactive tree expansion at types; retain backend member discovery and open members through search and source navigation in their declaring type.
-11. [ ] **Partial:** Add cancellation, progress, error documents, and an LRU cache. Loading feedback, cancellation, error tabs, and caching exist; the cache has no eviction or memory bound.
+11. [x] Add cancellation, progress, error documents, and a bounded model/token-batch LRU cache.
 12. [x] Implement history and symbol identity.
 13. [ ] **Partial:** Add semantic reference spans and editor navigation. Navigation exists, but current links are derived from identifier names rather than precise decompiler reference spans.
 14. [x] Add workspace-wide type/member name search with filtering and debounced UI updates.

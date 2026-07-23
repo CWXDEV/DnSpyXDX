@@ -7,6 +7,8 @@
 @inject IWorkspaceSessionService Session
 @inject IApplicationZoomService Zoom
 @inject IApplicationLifetime ApplicationLifetime
+@inject SourceViewStateStore SourceViewStates
+@inject SourcePresentationCache SourceCache
 
 <div class="app-shell">
   <header class="toolbar">
@@ -58,7 +60,7 @@
       <div class="document-content">
         @if (Workspace.ActiveTab is { IsLoading: true } loading) { <div class="decompiling-panel"><span class="decompiling-spinner"></span><strong>Decompiling @loading.Title…</strong><small>Large types can take a moment. You can close this tab to cancel.</small></div> }
         else if (Workspace.ActiveTab is { Error: not null } failed) { <div class="decompiling-panel error"><strong>Decompilation failed</strong><small>@failed.Error</small></div> }
-        else if (Workspace.ActiveTab is { } active) { <SourceView Document="active.Document" OnNavigate="NavigateFromSourceAsync" /> }
+        else if (Workspace.ActiveTab is { } active) { <SourceView TabId="active.Id" Document="active.Document" OnNavigate="NavigateFromSourceAsync" /> }
       </div>
       @if (searchOpen) {
         <section class="search-panel" @ref="searchPanel" style="height:@($"{searchPanelHeight}px")">
@@ -207,7 +209,7 @@
   private async Task ExportFromMenuAsync() { menuOpen = false; await ExportAsync(); }
   private void OpenSearchPanel() { menuOpen = false; searchOpen = true; focusSearch = true; ScheduleSave(); StateHasChanged(); }
   private void ToggleSearchPanel() { if (searchOpen) CloseSearch(); else OpenSearchPanel(); }
-  private async Task UnloadAllAsync() { menuOpen = false; CancelAllDecompilations(); Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; selectedNode = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
+  private async Task UnloadAllAsync() { menuOpen = false; CancelAllDecompilations(); Workspace.SetBusy(true, "Unloading assemblies…"); foreach (var assembly in Backend.Assemblies.ToArray()) await Backend.CloseAsync(assembly.SessionId); Workspace.Clear(); SourceViewStates.Clear(); SourceCache.Clear(); results = []; query = ""; searchOpen = false; selectedSymbol = null; selectedNode = null; revealedPath = new HashSet<NodeId>(); Workspace.SetBusy(false, "All assemblies unloaded"); }
   private void OpenAssemblyContextMenu(MouseEventArgs e, AssemblyDescriptor assembly)
   {
     menuOpen = false;
@@ -227,6 +229,8 @@
     }
     await Backend.CloseAsync(assembly.SessionId);
     Workspace.CloseAssembly(assembly.ModuleMvid);
+    SourceViewStates.RemoveAssembly(assembly.ModuleMvid);
+    SourceCache.RemoveAssembly(assembly.ModuleMvid);
     results = results.Where(result => result.Symbol.ModuleMvid != assembly.ModuleMvid).ToArray();
     if (selectedNode?.SessionId == assembly.SessionId) selectedNode = null;
     if (selectedSymbol?.ModuleMvid == assembly.ModuleMvid)
@@ -310,6 +314,7 @@
   {
     var wasDecompiling = decompilations.TryGetValue(id, out var cancellation);
     if (cancellation is not null) _ = cancellation.CancelAsync();
+    SourceViewStates.RemoveTab(id);
     Workspace.Close(id);
     if (wasDecompiling) Workspace.SetBusy(false, "Decompilation cancelled");
   }
