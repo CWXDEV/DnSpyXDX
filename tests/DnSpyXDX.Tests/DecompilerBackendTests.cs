@@ -52,7 +52,7 @@ public sealed class DecompilerBackendTests
 
         Assert.NotNull(document.SymbolLinks);
         Assert.Equal(testType.Symbol!.Value, document.SymbolLinks![nameof(DecompilerBackendTests)]);
-        Assert.True(document.SymbolLinks.ContainsKey(nameof(CodeHighlighterTests)));
+        Assert.True(document.SymbolLinks.ContainsKey(nameof(SourceTokenizerTests)));
         // Members of the type on screen are linkable too, scoped to that type.
         Assert.True(document.SymbolLinks.ContainsKey(nameof(Opens_browses_and_decompiles_a_managed_assembly)));
     }

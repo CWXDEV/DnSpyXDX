@@ -1,5 +1,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
+@inject SourceViewStateStore ViewStates
+@inject SourcePresentationCache Cache
 
 @if (findOpen)
 {
@@ -19,7 +21,7 @@ else
 {
   <div class="source-viewport" @ref="viewport" tabindex="0" role="region" aria-label="Decompiled source">
     <div class="source-canvas" style="min-width:@CanvasWidth">
-      <Virtualize @ref="virtualizer" Context="line" ItemsProvider="LoadLinesAsync" ItemSize="LineHeight" OverscanCount="Overscan">
+      <Virtualize @key="model.Key" @ref="virtualizer" Context="line" ItemsProvider="LoadLinesAsync" ItemSize="LineHeight" OverscanCount="Overscan">
         <SourceLineView @key="line.Number" Line="line" LineHeight="LineHeight" Matches="FindSpans(line.Number)" ActiveMatchOffset="ActiveMatchOffset" FocusedLine="focusedLine" HoveredSymbol="hoveredSymbol" OnHoverSymbol="HighlightSymbol" OnNavigate="OnNavigate" />
       </Virtualize>
     </div>
@@ -32,6 +34,7 @@ else
   private const int MaximumCanvasColumns = 20_000;
 
   [Parameter, EditorRequired] public DecompilerDocument Document { get; set; } = null!;
+  [Parameter, EditorRequired] public string TabId { get; set; } = "";
   [Parameter] public EventCallback<NavigationRequest> OnNavigate { get; set; }
 
   private ElementReference viewport;
@@ -40,6 +43,8 @@ else
   private DotNetObjectReference<SourceView>? selfReference;
   private SourceDocumentModel? model;
   private SourceDocumentKey? modelKey;
+  private string? modelTabId;
+  private IDisposable? modelLease;
   private CancellationTokenSource? preparation;
   private CancellationTokenSource? findDelay;
   private CancellationTokenSource? focusDelay;
@@ -61,26 +66,31 @@ else
   protected override async Task OnParametersSetAsync()
   {
     var key = SourceDocumentKey.Create(Document);
-    if (modelKey == key && model?.Text == Document.Text)
+    if (modelKey == key && model?.Text == Document.Text && modelTabId == TabId)
     {
       revealFocus = Document.FocusSymbol is { } focus && revealedFocus != (key, focus);
       return;
     }
 
+    await CaptureViewStateAsync();
     preparation?.Cancel();
     preparation?.Dispose();
     preparation = new CancellationTokenSource();
     var token = preparation.Token;
     model = null;
+    modelLease?.Dispose();
+    modelLease = null;
     modelKey = key;
+    modelTabId = TabId;
     matches = [];
     findSpans = new Dictionary<int, IReadOnlyList<SourceFindSpan>>();
     matchIndex = -1;
     try
     {
-      var prepared = await Task.Run(() => SourceDocumentModel.Create(key, Document.Text, token), token);
+      var prepared = await Cache.GetModelAsync(key, Document.Text, token);
       token.ThrowIfCancellationRequested();
       model = prepared;
+      modelLease = Cache.Activate(key);
       initializeBrowser = true;
       revealFocus = Document.FocusSymbol is { } focus && revealedFocus != (key, focus);
     }
@@ -95,7 +105,8 @@ else
     {
       initializeBrowser = false;
       await JS.InvokeVoidAsync("dnSpyXdx.initSourceFind", viewport, selfReference);
-      await JS.InvokeVoidAsync("dnSpyXdx.setSourceScroll", viewport, 0, 0);
+      var state = ViewStates.TryGet(TabId, model.Key, out var saved) ? saved : new SourceViewState(0, 0);
+      await JS.InvokeVoidAsync("dnSpyXdx.setSourceScroll", viewport, state.ScrollTop, state.ScrollLeft);
     }
     if (revealFocus && Document.FocusSymbol is { } focus && model.TryGetTokenLocation(focus.MetadataToken, out var position))
     {
@@ -115,7 +126,7 @@ else
   private async ValueTask<ItemsProviderResult<SourceTokenizedLine>> LoadLinesAsync(ItemsProviderRequest request)
   {
     if (model is null) return new ItemsProviderResult<SourceTokenizedLine>([], 0);
-    var lines = await model.TokenizeLinesAsync(request.StartIndex, request.Count, Document.SymbolLinks, request.CancellationToken);
+    var lines = await Cache.GetLinesAsync(model, request.StartIndex, request.Count, Document.SymbolLinks, request.CancellationToken);
     return new ItemsProviderResult<SourceTokenizedLine>(lines, model.LineCount);
   }
 
@@ -265,6 +276,7 @@ else
 
   public async ValueTask DisposeAsync()
   {
+    await CaptureViewStateAsync();
     preparation?.Cancel();
     preparation?.Dispose();
     findDelay?.Cancel();
@@ -274,5 +286,20 @@ else
     try { await JS.InvokeVoidAsync("dnSpyXdx.disposeSourceFind", viewport); }
     catch (JSDisconnectedException) { }
     selfReference?.Dispose();
+    modelLease?.Dispose();
   }
+
+  private async Task CaptureViewStateAsync()
+  {
+    if (modelKey is not { } key || string.IsNullOrEmpty(modelTabId)) return;
+    try
+    {
+      var scroll = await JS.InvokeAsync<SourceScrollPosition>("dnSpyXdx.getSourceScroll", viewport);
+      ViewStates.Set(modelTabId, key, new SourceViewState(scroll.ScrollTop, scroll.ScrollLeft, matchIndex >= 0 ? matchIndex : null));
+    }
+    catch (InvalidOperationException) { }
+    catch (JSDisconnectedException) { }
+  }
+
+  private sealed record SourceScrollPosition(double ScrollTop, double ScrollLeft);
 }

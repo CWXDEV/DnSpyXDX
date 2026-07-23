@@ -17,7 +17,7 @@ This milestone does not add IL modes, exact semantic-reference production, editi
 
 ## Progress
 
-Updated on 2026-07-23. Phases 1–4 are complete and manually verified; implementation is paused before phase 5.
+Updated on 2026-07-23. The visualisation milestone is complete and accepted. Linux behavior was manually verified; Windows runtime validation is deferred to external testing.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
@@ -25,8 +25,8 @@ Updated on 2026-07-23. Phases 1–4 are complete and manually verified; implemen
 | 2. Tokenizer | Complete | Stateful C# line tokenization, checkpoints, reference targets, brace metadata, and cancellable background processing are implemented and tested. |
 | 3. Virtualized viewer | Complete | The production source view uses `Virtualize<TItem>`, fixed-height rows, overscan, stable width, and hidden scrollbars. Large types are still limited by decompilation time before rendering begins. |
 | 4. Viewer features | Complete | Find, Enter/Shift+Enter/Escape, click/Ctrl+click navigation, declaration reveal/flash, occurrence hover, direct-token hover, visible guides, themes, and syntax colors have passed manual checks. |
-| 5. View state and caches | Not started | Next checkpoint. Implement per-tab scroll restoration and bounded presentation caching, then stop for verification. |
-| 6. Verification and rollout | Not started | Remove superseded code, run platform/publish checks, measure large documents, and update roadmap documentation. |
+| 5. View state and caches | Complete | Per-tab/document scroll restoration, bounded model/token-batch LRU caching, eviction cancellation, debug counters, and tab/assembly cleanup passed manual verification. |
+| 6. Verification and rollout | Complete | Superseded code is removed, automated tests and both RID publishes pass, and the milestone is accepted. Windows WebView2 runtime validation is tracked as deferred external testing. |
 
 ### Implementation notes
 
@@ -347,7 +347,7 @@ Exit: DOM size remains proportional to viewport height rather than document leng
 
 Exit: the old source viewer can be removed without losing supported workflows.
 
-### 5. Add view state and bounded caches — next
+### 5. Add view state and bounded caches — implemented, awaiting verification
 
 - Capture and restore per-tab/document scroll state.
 - Add model and token-batch LRU limits.

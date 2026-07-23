@@ -34,6 +34,11 @@ Create small source projects in `tests/TestAssemblies` and compile them during t
 
 Assertions should focus on semantic behavior, not exact whitespace for every decompiler version. Golden tests are appropriate for the `.slnx`, stable project structure, symbol spans, and path sanitization. Keep a small set of exact decompilation snapshots pinned to the package version to detect unexpected upgrades.
 
+The source presentation path is covered by line-index, UTF-16 offset, stateful tokenizer,
+reference-resolution, cache-recency, eviction, and view-state tests. Production rendering uses
+only the virtualized Blazor viewer; the superseded full-document HTML renderer and DOM-wide find
+and guide passes have been removed. GUI behavior still requires the platform acceptance test below.
+
 ### MVP acceptance test
 
 On both Windows x64 and Linux x64:

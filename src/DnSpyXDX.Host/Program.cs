@@ -23,6 +23,8 @@ internal static class Program
         builder.Services.AddSingleton<IDecompilerBackend, DecompilerBackend>();
         builder.Services.AddSingleton<IProjectExportService, ProjectExportService>();
         builder.Services.AddSingleton<WorkspaceState>();
+        builder.Services.AddSingleton<SourceViewStateStore>();
+        builder.Services.AddSingleton<SourcePresentationCache>();
         builder.Services.AddSingleton<IFileDialogService, PhotinoFileDialogService>();
         builder.Services.AddSingleton<IWorkspaceSessionService, WorkspaceSessionService>();
         var zoomService = new PhotinoZoomService();
